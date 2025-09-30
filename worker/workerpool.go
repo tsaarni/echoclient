@@ -41,6 +41,12 @@ func WithRepetitions(n int) WorkerPoolOption {
 	}
 }
 
+func WithInfiniteRepetitions() WorkerPoolOption {
+	return func(wp *WorkerPool) {
+		wp.repetitions = 0
+	}
+}
+
 // WithRateLimit sets the global number of operations per second across the workers in the pool.
 func WithRateLimit(n int) WorkerPoolOption {
 	return func(wp *WorkerPool) {

@@ -25,8 +25,8 @@ const (
 type ReaderOption func(*Reader)
 
 type Reader struct {
-	sizeRemaining     int64
-	chunkSize         int
+	sizeRemaining     uint64
+	chunkSize         uint64
 	asciiPatternIndex int // index for cycling through printable ASCII
 	mode              ContentMode
 	randSrc           *rand.Rand
@@ -58,7 +58,6 @@ func WithASCII(mode ContentMode) ReaderOption {
 }
 
 // WithRandom sets the reader to generate random byte data.
-// The seed is initialized using the current time.
 func WithRandom() ReaderOption {
 	return func(r *Reader) {
 		r.mode = modeRandom
@@ -75,14 +74,14 @@ func WithRandomSeed(seed int64) ReaderOption {
 }
 
 // WithTotalSize sets the total size of data to generate. Once this size is reached, Read returns io.EOF.
-func WithTotalSize(n int64) ReaderOption {
+func WithTotalSize(n uint64) ReaderOption {
 	return func(r *Reader) {
 		r.sizeRemaining = n
 	}
 }
 
 // WithChunkSize sets the maximum chunk size for each Read call.
-func WithChunkSize(n int) ReaderOption {
+func WithChunkSize(n uint64) ReaderOption {
 	return func(r *Reader) {
 		if n > 0 {
 			r.chunkSize = n
@@ -96,14 +95,13 @@ func (r *Reader) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 
-	// Determine how many bytes to write this call.
-	var toWrite int
-	if len(p) < r.chunkSize {
-		toWrite = len(p)
-	} else if int64(r.chunkSize) < r.sizeRemaining {
+	// Determine how many bytes to write this call: min(len(p), chunkSize, sizeRemaining)
+	toWrite := r.sizeRemaining
+	if toWrite > r.chunkSize {
 		toWrite = r.chunkSize
-	} else {
-		toWrite = int(r.sizeRemaining)
+	}
+	if toWrite > uint64(len(p)) {
+		toWrite = uint64(len(p))
 	}
 
 	if toWrite == 0 {
@@ -119,22 +117,19 @@ func (r *Reader) Read(p []byte) (int, error) {
 		r.fillASCII(p, toWrite)
 	}
 
-	r.sizeRemaining -= int64(toWrite)
-	if r.sizeRemaining < 0 {
-		r.sizeRemaining = 0
-	}
+	r.sizeRemaining -= toWrite
 
-	return toWrite, nil
+	return int(toWrite), nil
 }
 
 // fillRandom fills buffer with random bytes up to toWrite bytes.
-func (r *Reader) fillRandom(buffer []byte, toWrite int) {
+func (r *Reader) fillRandom(buffer []byte, toWrite uint64) {
 	r.randSrc.Read(buffer[:toWrite])
 }
 
 // fillASCII fills buffer with an ASCII pattern up to toWrite bytes.
-func (r *Reader) fillASCII(buffer []byte, toWrite int) {
-	for i := 0; i < toWrite; i++ {
+func (r *Reader) fillASCII(buffer []byte, toWrite uint64) {
+	for i := uint64(0); i < toWrite; i++ {
 		buffer[i] = asciiPrintableStart + byte(r.asciiPatternIndex)
 		r.asciiPatternIndex++
 		if r.asciiPatternIndex >= asciiPrintableRange {
