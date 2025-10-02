@@ -12,6 +12,22 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
+type tableRow struct {
+	metric string
+	labels string
+	value  string
+}
+
+// Previous metric values for rate calculation:
+// These rate metrics are generated client-side for console display, since there is no Prometheus server to perform the calculation.
+// map[metricName][labels]prevValue
+var prevMetricValues = map[string]map[string]float64{
+	"http_client_requests_total": {},
+	"http_client_errors_total":   {},
+}
+
+var prevMetricsDumpTime time.Time = time.Now()
+
 // DumpMetrics logs the current values of all registered metrics.
 func DumpMetrics() {
 	runtimeSeconds.Set(time.Since(startTime).Seconds())
@@ -23,6 +39,8 @@ func DumpMetrics() {
 		return
 	}
 
+	synthetizeRateMetrics(&metricFamilies)
+
 	rows := buildMetricRows(metricFamilies)
 	if len(rows) == 0 {
 		fmt.Println("No Prometheus metrics to display.")
@@ -30,12 +48,6 @@ func DumpMetrics() {
 	}
 
 	tabularDump(rows)
-}
-
-type tableRow struct {
-	metric string
-	labels string
-	value  string
 }
 
 // buildMetricRows constructs table rows for metrics.
@@ -154,12 +166,68 @@ func humanizeMetric(name string, val float64) string {
 		d := time.Duration(val * float64(time.Second)).Round(time.Millisecond)
 		return d.String()
 	case "http_client_requests_total", "http_client_errors_total":
-		rps := int(val / float64(time.Since(startTime).Seconds()))
-		return humanize.Comma(int64(val)) + " (" + humanize.Comma(int64(rps)) + "/s)"
+		return humanize.Comma(int64(val))
+	case "http_client_requests_per_second", "http_client_errors_per_second":
+		return humanize.Comma(int64(val))
 	default:
 		if val > 1e12 || (val < 1e-3 && val != 0) {
 			return fmt.Sprintf("%.3e", val)
 		}
 		return fmt.Sprintf("%v", val)
 	}
+}
+
+// synthetizeRateMetrics computes and adds per-second rate gauge metrics for http_client_requests_total and http_client_errors_total.
+func synthetizeRateMetrics(metricFamilies *[]*dto.MetricFamily) {
+	fromMetrics := []struct {
+		fromName string
+		rateName string
+	}{
+		{"http_client_requests_total", "http_client_requests_per_second"},
+		{"http_client_errors_total", "http_client_errors_per_second"},
+	}
+
+	now := time.Now()
+	elapsed := now.Sub(prevMetricsDumpTime).Seconds()
+
+	for _, m := range fromMetrics {
+		fromFamily := findMetricFamily(*metricFamilies, m.fromName)
+		if fromFamily == nil {
+			continue
+		}
+		rateFamily := buildRateMetricFamily(fromFamily, m.fromName, m.rateName, elapsed)
+		*metricFamilies = append(*metricFamilies, rateFamily)
+	}
+	prevMetricsDumpTime = now
+}
+
+// findMetricFamily returns the pointer to the metric family with the given name, or nil if not found.
+func findMetricFamily(families []*dto.MetricFamily, name string) *dto.MetricFamily {
+	for _, fam := range families {
+		if fam.GetName() == name {
+			return fam
+		}
+	}
+	return nil
+}
+
+// buildRateMetricFamily builds a new metric family for the per-second rate.
+func buildRateMetricFamily(fromFamily *dto.MetricFamily, fromName, rateName string, elapsed float64) *dto.MetricFamily {
+	rateFamily := &dto.MetricFamily{
+		Name: &rateName,
+		Type: dto.MetricType_GAUGE.Enum(),
+	}
+	for _, metric := range fromFamily.GetMetric() {
+		labels := formatLabels(metric.GetLabel())
+		val := metric.GetCounter().GetValue()
+		prevVal := prevMetricValues[fromName][labels]
+		rate := (val - prevVal) / elapsed
+		newMetric := &dto.Metric{
+			Label: metric.Label,
+			Gauge: &dto.Gauge{Value: &rate},
+		}
+		rateFamily.Metric = append(rateFamily.Metric, newMetric)
+		prevMetricValues[fromName][labels] = val
+	}
+	return rateFamily
 }
