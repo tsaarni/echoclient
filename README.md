@@ -12,40 +12,40 @@ It can be used in two ways:
 echoclient <subcommand> [flags]
 ```
 
-#### **get** subcommand
+#### `get` subcommand
 
 Sends HTTP GET requests to the target server.
 Each worker performs the specified number of repetitions.
 
 Flags:
 
-| Flag              | Default               | Description                                                    |
-| ----------------- | --------------------- | -------------------------------------------------------------- |
-| `-url`            | http://localhost:8080 | Server URL                                                     |
-| `-concurrency`    | 1                     | Number of concurrent workers                                   |
-| `-repetitions`    | 0                     | Number of repetitions per worker (0 = infinite repetitions)    |
-| `-duration`       | 0                     | Duration of the load test (0 = run until repetitions complete) |
-| `-rps`            | 0                     | Requests per second allowed across all workers (0 = no limit)  |
-| `-ramp-up-period` | 0                     | Ramp-up period to reach target rps (0 = no ramp-up)            |
+| Flag              | Default               | Description                                                         |
+| ----------------- | --------------------- | ------------------------------------------------------------------- |
+| `-url`            | http://localhost:8080 | Server URL                                                          |
+| `-concurrency`    | 1                     | Number of concurrent workers                                        |
+| `-repetitions`    | 0                     | Number of repetitions per worker<br>_(0 = infinite repetitions)_    |
+| `-duration`       | 0                     | Duration of the load test<br>_(0 = run until repetitions complete)_ |
+| `-rps`            | 0                     | Requests per second allowed across all workers<br>_(0 = no limit)_  |
+| `-ramp-up-period` | 0                     | Ramp-up period to reach target rps<br>_(0 = no ramp-up)_            |
 
 You can specify `-duration` and `-ramp-up-period` with values such as `1h`, `30m`, or `15s`.
 If both `-duration` and `-repetitions` are set, the test will end when either limit is reached first.
 
-#### **upload** subcommand
+#### `upload` subcommand
 
 Uploads generated data to the target server using HTTP POST requests.
 Each worker uploads the specified total size, split into chunks.
 
 Flags:
 
-| Flag           | Default                      | Description                                                    |
-| -------------- | ---------------------------- | -------------------------------------------------------------- |
-| `-concurrency` | 1                            | Number of concurrent workers                                   |
-| `-repetitions` | 1                            | Number of repetitions per worker (0 = infinite repetitions)    |
-| `-duration`    | 0                            | Duration of the load test (0 = run until repetitions complete) |
-| `-size`        | 10MB                         | Total size of data to upload per worker (in bytes)             |
-| `-chunk`       | 64KB                         | Chunk size for data generation (in bytes)                      |
-| `-url`         | http://localhost:8080/upload | Server URL                                                     |
+| Flag           | Default                      | Description                                                         |
+| -------------- | ---------------------------- | ------------------------------------------------------------------- |
+| `-concurrency` | 1                            | Number of concurrent workers                                        |
+| `-repetitions` | 1                            | Number of repetitions per worker<br>_(0 = infinite repetitions)_    |
+| `-duration`    | 0                            | Duration of the load test<br>_(0 = run until repetitions complete)_ |
+| `-size`        | 10MB                         | Total size of data to upload per worker, specified in bytes         |
+| `-chunk`       | 64KB                         | Chunk size for data generation, specified in bytes                  |
+| `-url`         | http://localhost:8080/upload | Server URL                                                          |
 
 You can specify `-duration` with values such as `1h`, `30m`, or `15s`.
 If both `-duration` and `-repetitions` are set, the test will end when either limit is reached first.

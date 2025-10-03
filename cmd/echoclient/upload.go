@@ -17,8 +17,8 @@ func runUpload(args []string) {
 	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
 	repetitions := cmd.Int("repetitions", 1, "Number of repetitions per worker (0 = infinite repetitions)")
 	duration := cmd.Duration("duration", 0, "Duration of the load test (0 = run until repetitions complete)")
-	totalSize := cmd.String("size", "10MB", "Total size of data to upload per worker (in bytes)")
-	chunkSize := cmd.String("chunk", "64KB", "Chunk size for data generation (in bytes)")
+	totalSize := cmd.String("size", "10MB", "Total size of data to upload per worker, specified in bytes")
+	chunkSize := cmd.String("chunk", "64KB", "Chunk size for data generation, specified in bytes")
 
 	if err := cmd.Parse(args); err != nil {
 		fmt.Printf("Failed to parse flags: %v\n", err)

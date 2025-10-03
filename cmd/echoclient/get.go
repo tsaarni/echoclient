@@ -19,7 +19,7 @@ func runGet(args []string) {
 	repetitions := cmd.Int("repetitions", 0, "Number of repetitions per worker (0 = infinite repetitions)")
 	duration := cmd.Duration("duration", 0, "Duration of the load test (0 = run until repetitions complete)")
 	rps := cmd.Int("rps", 0, "Requests per second allowed across all workers (0 = no limit)")
-	rampUpPeriod := cmd.Duration("ramp-up-period", 0, "Ramp-up period to reach target rps (0 means no ramp-up)")
+	rampUpPeriod := cmd.Duration("ramp-up-period", 0, "Ramp-up period to reach target rps (0 = no ramp-up)")
 
 	if err := cmd.Parse(args); err != nil {
 		fmt.Printf("Failed to parse flags: %v\n", err)
