@@ -1,19 +1,29 @@
 package metrics
 
 import (
-	"github.com/fatih/color"
-	"github.com/rodaine/table"
+	"fmt"
+	"os"
+	"text/tabwriter"
+)
+
+const (
+	colorReset  = "\033[0m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	underline   = "\033[4m"
 )
 
 func tabularDump(rows []tableRow) {
-	headerFmt := color.New(color.FgGreen, color.Underline).SprintfFunc()
-	columnFmt := color.New(color.FgYellow).SprintfFunc()
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	tbl := table.New("Metric", "Labels", "Value")
-	tbl.WithHeaderFormatter(headerFmt).WithFirstColumnFormatter(columnFmt)
+	fmt.Fprintf(w, "%s%s%sMetric\tLabels\tValue\t%s\n",
+		colorGreen, underline, "", colorReset)
+
 	for _, row := range rows {
-		tbl.AddRow(row.metric, row.labels, row.value)
+		fmt.Fprintf(w, "%s%s%s\t%s\t%v\t\n",
+			colorYellow, row.metric, colorReset,
+			row.labels, row.value)
 	}
 
-	tbl.Print()
+	w.Flush()
 }
