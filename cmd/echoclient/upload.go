@@ -16,6 +16,7 @@ func runUpload(args []string) {
 	url := cmd.String("url", "http://localhost:8080/upload", "Server URL")
 	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
 	repetitions := cmd.Int("repetitions", 1, "Number of repetitions per worker (0 = infinite repetitions)")
+	duration := cmd.Duration("duration", 0, "Duration of the load test (0 = run until repetitions complete)")
 	totalSize := cmd.String("size", "10MB", "Total size of data to upload per worker (in bytes)")
 	chunkSize := cmd.String("chunk", "64KB", "Chunk size for data generation (in bytes)")
 
@@ -40,8 +41,13 @@ func runUpload(args []string) {
 		reps = fmt.Sprintf("%d", *repetitions)
 	}
 
-	fmt.Printf("Running 'upload' with concurrency=%d, repetitions=%s, url=%s, totalsize=%d bytes, chunksize=%d bytes\n",
-		*concurrency, reps, *url, parsedTotalSize, parsedChunkSize)
+	dur := "no time limit"
+	if *duration > 0 {
+		dur = duration.String()
+	}
+
+	fmt.Printf("Running 'upload' with url=%s, concurrency=%d, repetitions=%s, duration=%s, totalsize=%d bytes, chunksize=%d bytes\n",
+		*url, *concurrency, reps, dur, parsedTotalSize, parsedChunkSize)
 
 	http := metrics.NewMeasuringHTTPClient()
 
@@ -62,6 +68,7 @@ func runUpload(args []string) {
 		doUpload,
 		worker.WithConcurrency(*concurrency),
 		worker.WithRepetitions(*repetitions),
+		worker.WithTimeout(*duration),
 	)
 
 	w.Launch().Wait()

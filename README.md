@@ -24,10 +24,12 @@ Flags:
 | `-url`            | http://localhost:8080 | Server URL                                                     |
 | `-concurrency`    | 1                     | Number of concurrent workers                                   |
 | `-repetitions`    | 0                     | Number of repetitions per worker (0 = infinite repetitions)    |
+| `-duration`       | 0                     | Duration of the load test (0 = run until repetitions complete) |
 | `-rps`            | 0                     | Requests per second allowed across all workers (0 = no limit)  |
 | `-ramp-up-period` | 0                     | Ramp-up period in seconds to reach target rps (0 = no ramp-up) |
 
-`-repetitions` of 0 means infinite repetitions.
+You can specify `-duration` with values such as `1h`, `30m`, or `15s`.
+If both `-duration` and `-repetitions` are set, the test will end when either limit is reached first.
 
 #### **upload** subcommand
 
@@ -36,16 +38,19 @@ Each worker uploads the specified total size, split into chunks.
 
 Flags:
 
-| Flag           | Default                      | Description                                                               |
-| -------------- | ---------------------------- | ------------------------------------------------------------------------- |
-| `-concurrency` | 1                            | Number of concurrent workers                                              |
-| `-repetitions` | 1                            | Number of repetitions per worker (0 = infinite repetitions)               |
-| `-size`        | 10MB                         | Total size of data to upload per worker (in bytes)                        |
-| `-chunk`       | 64KB                         | Chunk size for data generation (in bytes)                                 |
-| `-url`         | http://localhost:8080/upload | Server URL                                                                |
+| Flag           | Default                      | Description                                                    |
+| -------------- | ---------------------------- | -------------------------------------------------------------- |
+| `-concurrency` | 1                            | Number of concurrent workers                                   |
+| `-repetitions` | 1                            | Number of repetitions per worker (0 = infinite repetitions)    |
+| `-duration`    | 0                            | Duration of the load test (0 = run until repetitions complete) |
+| `-size`        | 10MB                         | Total size of data to upload per worker (in bytes)             |
+| `-chunk`       | 64KB                         | Chunk size for data generation (in bytes)                      |
+| `-url`         | http://localhost:8080/upload | Server URL                                                     |
 
-`-repetitions` of 0 means infinite repetitions.<br>
-`-size` and `-chunk` accept human-readable values e.g., `1GB`, `10MB`, `64KB`.
+You can specify `-duration` with values such as `1h`, `30m`, or `15s`.
+If both `-duration` and `-repetitions` are set, the test will end when either limit is reached first.
+
+You can specify `-size` and `-chunk` using values like `1GB`, `10MB`, or `64KB`.
 
 #### Example
 

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"sync"
+	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -15,6 +16,7 @@ type WorkerPool struct {
 	concurrency int
 	repetitions int // 0 means unlimited repetitions
 	wg          sync.WaitGroup
+	ctx         context.Context
 	cancel      context.CancelFunc
 	worker      WorkerFunc
 	limiter     *rate.Limiter
@@ -41,6 +43,7 @@ func WithRepetitions(n int) WorkerPoolOption {
 	}
 }
 
+// WithInfiniteRepetitions configures the worker pool to run indefinitely.
 func WithInfiniteRepetitions() WorkerPoolOption {
 	return func(wp *WorkerPool) {
 		wp.repetitions = 0
@@ -56,58 +59,72 @@ func WithRateLimit(rps, burst int) WorkerPoolOption {
 	}
 }
 
-// NewWorkerPool creates a new WorkerPool with the given worker function and options.
+// WithTimeout sets a timeout for the entire worker pool operation.
+func WithTimeout(timeout time.Duration) WorkerPoolOption {
+	return func(wp *WorkerPool) {
+		if timeout > 0 {
+			wp.ctx, wp.cancel = context.WithTimeout(context.Background(), timeout)
+		}
+	}
+}
+
+// NewWorkerPool creates a new worker pool with the given options.
 func NewWorkerPool(worker WorkerFunc, opts ...WorkerPoolOption) *WorkerPool {
 	wp := &WorkerPool{
 		concurrency: 1,
-		repetitions: 0,
 		worker:      worker,
 	}
 	for _, o := range opts {
 		o(wp)
 	}
+
 	return wp
 }
 
-// Launch starts the worker pool, running the worker function in parallel.
-func (pool *WorkerPool) Launch() *WorkerPool {
-	ctx, cancel := context.WithCancel(context.Background())
-	pool.cancel = cancel
-	for i := 0; i < pool.concurrency; i++ {
-		pool.wg.Add(1)
+// Launch starts the worker pool with the given context and runs the worker function in parallel.
+func (wp *WorkerPool) Launch() *WorkerPool {
+	if wp.ctx == nil {
+		wp.ctx, wp.cancel = context.WithCancel(context.Background())
+	}
+
+	for i := 0; i < wp.concurrency; i++ {
+		wp.wg.Add(1)
 		go func() {
-			defer pool.wg.Done()
-			for j := 0; pool.repetitions == 0 || j < pool.repetitions; j++ {
-				if pool.limiter != nil {
-					if err := pool.limiter.Wait(ctx); err != nil {
-						return
+			defer wp.wg.Done()
+			for j := 0; wp.repetitions == 0 || j < wp.repetitions; j++ {
+				select {
+				case <-wp.ctx.Done():
+					return
+				default:
+					if wp.limiter != nil {
+						if err := wp.limiter.Wait(wp.ctx); err != nil {
+							return
+						}
 					}
-				} else {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-					}
+					_ = wp.worker(wp.ctx)
 				}
-				_ = pool.worker(ctx)
 			}
 		}()
 	}
-	return pool
+	return wp
 }
 
-func (pool *WorkerPool) Wait() {
-	pool.wg.Wait()
+// Wait blocks until all workers have completed.
+func (wp *WorkerPool) Wait() {
+	wp.wg.Wait()
 }
 
-func (pool *WorkerPool) Stop() {
-	pool.cancel()
+// Stop signals all workers to stop after their current operation.
+func (wp *WorkerPool) Stop() {
+	if wp.cancel != nil {
+		wp.cancel()
+	}
 }
 
 // SetRateLimit updates the rate limiter's rate and burst at runtime.
-func (pool *WorkerPool) SetRateLimit(rps int, burst int) {
-	if pool.limiter != nil && rps > 0 {
-		pool.limiter.SetLimit(rate.Limit(rps))
-		pool.limiter.SetBurst(burst)
+func (wp *WorkerPool) SetRateLimit(rps int, burst int) {
+	if wp.limiter != nil && rps > 0 {
+		wp.limiter.SetLimit(rate.Limit(rps))
+		wp.limiter.SetBurst(burst)
 	}
 }

@@ -17,6 +17,7 @@ func runGet(args []string) {
 	url := cmd.String("url", "http://localhost:8080", "Server URL")
 	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
 	repetitions := cmd.Int("repetitions", 0, "Number of repetitions per worker (0 = infinite repetitions)")
+	duration := cmd.Duration("duration", 0, "Duration of the load test (0 = run until repetitions complete)")
 	rps := cmd.Int("rps", 0, "Requests per second allowed across all workers (0 = no limit)")
 	rampUpPeriod := cmd.Int("ramp-up-period", 0, "Ramp-up period in seconds to reach target rps (0 means no ramp-up)")
 
@@ -35,7 +36,12 @@ func runGet(args []string) {
 		reps = fmt.Sprintf("%d", *repetitions)
 	}
 
-	fmt.Printf("Running 'get' with url=%s, concurrency=%d, repetitions=%s\n", *url, *concurrency, reps)
+	dur := "no time limit"
+	if *duration > 0 {
+		dur = duration.String()
+	}
+
+	fmt.Printf("Running 'get' with url=%s, concurrency=%d, repetitions=%s, duration=%s\n", *url, *concurrency, reps, dur)
 
 	http := metrics.NewMeasuringHTTPClient()
 
@@ -75,6 +81,7 @@ func runGet(args []string) {
 		worker.WithConcurrency(*concurrency),
 		worker.WithRepetitions(*repetitions),
 		worker.WithRateLimit(rpsInitial, rpsInitial / *concurrency),
+		worker.WithTimeout(*duration),
 	)
 
 	if rampUpFunc != nil {
