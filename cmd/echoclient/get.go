@@ -19,7 +19,7 @@ func runGet(args []string) {
 	repetitions := cmd.Int("repetitions", 0, "Number of repetitions per worker (0 = infinite repetitions)")
 	duration := cmd.Duration("duration", 0, "Duration of the load test (0 = run until repetitions complete)")
 	rps := cmd.Int("rps", 0, "Requests per second allowed across all workers (0 = no limit)")
-	rampUpPeriod := cmd.Int("ramp-up-period", 0, "Ramp-up period in seconds to reach target rps (0 means no ramp-up)")
+	rampUpPeriod := cmd.Duration("ramp-up-period", 0, "Ramp-up period to reach target rps (0 means no ramp-up)")
 
 	if err := cmd.Parse(args); err != nil {
 		fmt.Printf("Failed to parse flags: %v\n", err)
@@ -55,24 +55,29 @@ func runGet(args []string) {
 		return nil
 	}
 
-	// If ramp-up period is specified, start with a lower RPS and gradually increase to the target RPS.
 	rpsInitial := *rps
 	var rampUpFunc func(w *worker.WorkerPool)
-	if *rps > 0 {
-		fmt.Printf("  rps=%d, ramp-up-period=%d seconds\n", *rps, *rampUpPeriod)
 
-		if *rampUpPeriod > 0 {
-			rpsInitial = max(*rps/10, 1)
-			rampUpFunc = func(w *worker.WorkerPool) {
-				steps := *rampUpPeriod * 10 // 10 steps per second (100ms interval)
-				for i := 1; i <= steps; i++ {
-					target := *rps * i / steps
-					w.SetRateLimit(target, target / *concurrency)
-					time.Sleep(100 * time.Millisecond)
+	if *rps > 0 && *rampUpPeriod > 0 {
+		fmt.Printf("  rps=%d, ramp-up-period=%s\n", *rps, *rampUpPeriod)
+		rpsInitial = 1
+		rampUpFunc = func(w *worker.WorkerPool) {
+			start := time.Now()
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+
+			for {
+				elapsed := time.Since(start)
+				if elapsed >= *rampUpPeriod {
+					break
 				}
-				// Ensure final rate is set
-				w.SetRateLimit(*rps, *rps / *concurrency)
+
+				progress := float64(elapsed) / float64(*rampUpPeriod)
+				target := int(float64(*rps) * progress)
+				w.SetRateLimit(target, target / *concurrency)
+				<-ticker.C
 			}
+			w.SetRateLimit(*rps, *rps / *concurrency)
 		}
 	}
 

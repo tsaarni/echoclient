@@ -26,9 +26,9 @@ Flags:
 | `-repetitions`    | 0                     | Number of repetitions per worker (0 = infinite repetitions)    |
 | `-duration`       | 0                     | Duration of the load test (0 = run until repetitions complete) |
 | `-rps`            | 0                     | Requests per second allowed across all workers (0 = no limit)  |
-| `-ramp-up-period` | 0                     | Ramp-up period in seconds to reach target rps (0 = no ramp-up) |
+| `-ramp-up-period` | 0                     | Ramp-up period to reach target rps (0 = no ramp-up)            |
 
-You can specify `-duration` with values such as `1h`, `30m`, or `15s`.
+You can specify `-duration` and `-ramp-up-period` with values such as `1h`, `30m`, or `15s`.
 If both `-duration` and `-repetitions` are set, the test will end when either limit is reached first.
 
 #### **upload** subcommand
