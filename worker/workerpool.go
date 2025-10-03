@@ -48,10 +48,10 @@ func WithInfiniteRepetitions() WorkerPoolOption {
 }
 
 // WithRateLimit sets the global number of operations per second across the workers in the pool.
-func WithRateLimit(n int) WorkerPoolOption {
+func WithRateLimit(rps, burst int) WorkerPoolOption {
 	return func(wp *WorkerPool) {
-		if n > 0 {
-			wp.limiter = rate.NewLimiter(rate.Limit(n), n)
+		if rps > 0 {
+			wp.limiter = rate.NewLimiter(rate.Limit(rps), burst)
 		}
 	}
 }
@@ -102,4 +102,12 @@ func (pool *WorkerPool) Wait() {
 
 func (pool *WorkerPool) Stop() {
 	pool.cancel()
+}
+
+// SetRateLimit updates the rate limiter's rate and burst at runtime.
+func (pool *WorkerPool) SetRateLimit(rps int, burst int) {
+	if pool.limiter != nil && rps > 0 {
+		pool.limiter.SetLimit(rate.Limit(rps))
+		pool.limiter.SetBurst(burst)
+	}
 }

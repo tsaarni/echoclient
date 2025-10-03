@@ -19,11 +19,13 @@ Each worker performs the specified number of repetitions.
 
 Flags:
 
-| Flag           | Default               | Description                      |
-| -------------- | --------------------- | -------------------------------- |
-| `-concurrency` | 1                     | Number of concurrent workers     |
-| `-repetitions` | 0                     | Number of repetitions per worker |
-| `-addr`        | http://localhost:8080 | Server address URL               |
+| Flag              | Default               | Description                                                    |
+| ----------------- | --------------------- | -------------------------------------------------------------- |
+| `-url`            | http://localhost:8080 | Server URL                                                     |
+| `-concurrency`    | 1                     | Number of concurrent workers                                   |
+| `-repetitions`    | 0                     | Number of repetitions per worker (0 = infinite repetitions)    |
+| `-rps`            | 0                     | Requests per second allowed across all workers (0 = no limit)  |
+| `-ramp-up-period` | 0                     | Ramp-up period in seconds to reach target rps (0 = no ramp-up) |
 
 `-repetitions` of 0 means infinite repetitions.
 
@@ -34,16 +36,16 @@ Each worker uploads the specified total size, split into chunks.
 
 Flags:
 
-| Flag           | Default                      | Description                                        |
-| -------------- | ---------------------------- | -------------------------------------------------- |
-| `-concurrency` | 1                            | Number of concurrent workers                       |
-| `-repetitions` | 1                            | Number of repetitions per worker                   |
-| `-totalsize`   | 10MB                         | Total size of data to upload per worker (in bytes) |
-| `-chunksize`   | 64KB                         | Chunk size (bytes) per write operation             |
-| `-addr`        | http://localhost:8080/upload | Server address URL                                 |
+| Flag           | Default                      | Description                                                               |
+| -------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| `-concurrency` | 1                            | Number of concurrent workers                                              |
+| `-repetitions` | 1                            | Number of repetitions per worker (0 = infinite repetitions)               |
+| `-size`        | 10MB                         | Total size of data to upload per worker (in bytes)                        |
+| `-chunk`       | 64KB                         | Chunk size for data generation (in bytes)                                 |
+| `-url`         | http://localhost:8080/upload | Server URL                                                                |
 
 `-repetitions` of 0 means infinite repetitions.<br>
-`-totalsize` and `-chunksize` accept human-readable values (e.g., `1GB`, `10MB`, `64KB`).
+`-size` and `-chunk` accept human-readable values e.g., `1GB`, `10MB`, `64KB`.
 
 #### Example
 

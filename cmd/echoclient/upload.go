@@ -12,21 +12,16 @@ import (
 )
 
 func runUpload(args []string) {
-	uploadCmd := flag.NewFlagSet("upload", flag.ExitOnError)
-	concurrency := uploadCmd.Int("concurrency", 1, "Number of concurrent workers")
-	repetitions := uploadCmd.Int("repetitions", 1, "Number of repetitions per worker")
-	totalSize := uploadCmd.String("totalsize", "10MB", "Total size of data to upload per worker (in bytes)")
-	chunkSize := uploadCmd.String("chunksize", "64KB", "Chunk size for data generation (in bytes)")
-	addr := uploadCmd.String("addr", "http://localhost:8080/upload", "Server URL")
+	cmd := flag.NewFlagSet("upload", flag.ExitOnError)
+	url := cmd.String("url", "http://localhost:8080/upload", "Server URL")
+	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
+	repetitions := cmd.Int("repetitions", 1, "Number of repetitions per worker (0 = infinite repetitions)")
+	totalSize := cmd.String("size", "10MB", "Total size of data to upload per worker (in bytes)")
+	chunkSize := cmd.String("chunk", "64KB", "Chunk size for data generation (in bytes)")
 
-	if err := uploadCmd.Parse(args); err != nil {
+	if err := cmd.Parse(args); err != nil {
 		fmt.Printf("Failed to parse flags: %v\n", err)
 		return
-	}
-
-	reps := "infinite"
-	if *repetitions > 0 {
-		reps = fmt.Sprintf("%d", *repetitions)
 	}
 
 	parsedTotalSize, err := humanize.ParseBytes(*totalSize)
@@ -40,8 +35,13 @@ func runUpload(args []string) {
 		return
 	}
 
-	fmt.Printf("Running 'upload' with concurrency=%d, repetitions=%s, addr=%s\n", *concurrency, reps, *addr)
-	fmt.Printf("    totalsize=%d bytes, chunksize=%d bytes\n", parsedTotalSize, parsedChunkSize)
+	reps := "infinite"
+	if *repetitions > 0 {
+		reps = fmt.Sprintf("%d", *repetitions)
+	}
+
+	fmt.Printf("Running 'upload' with concurrency=%d, repetitions=%s, url=%s, totalsize=%d bytes, chunksize=%d bytes\n",
+		*concurrency, reps, *url, parsedTotalSize, parsedChunkSize)
 
 	http := metrics.NewMeasuringHTTPClient()
 
@@ -50,7 +50,7 @@ func runUpload(args []string) {
 			generator.WithTotalSize(parsedTotalSize),
 			generator.WithChunkSize(parsedChunkSize),
 		)
-		resp, err := http.Post(*addr, "application/octet-stream", reader)
+		resp, err := http.Post(*url, "application/octet-stream", reader)
 		if err != nil {
 			return err
 		}
@@ -58,12 +58,13 @@ func runUpload(args []string) {
 		return nil
 	}
 
-	r := worker.NewWorkerPool(
+	w := worker.NewWorkerPool(
 		doUpload,
 		worker.WithConcurrency(*concurrency),
 		worker.WithRepetitions(*repetitions),
 	)
-	r.Launch().Wait()
+
+	w.Launch().Wait()
 
 	metrics.DumpMetrics()
 }

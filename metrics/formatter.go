@@ -152,7 +152,7 @@ func formatLabels(pairs []*dto.LabelPair) string {
 	return strings.Join(labels, ", ")
 }
 
-// humanizeMetric returns a human-readable string for known metrics.
+// humanizeMetric returns a human-readable string for metrics.
 func humanizeMetric(name string, val float64) string {
 	switch name {
 	case "process_network_receive_bytes_total", "process_network_transmit_bytes_total", "process_resident_memory_bytes", "process_virtual_memory_bytes", "process_virtual_memory_max_bytes":
@@ -165,14 +165,9 @@ func humanizeMetric(name string, val float64) string {
 	case "runtime_seconds", "http_client_request_duration_seconds", "process_cpu_seconds_total":
 		d := time.Duration(val * float64(time.Second)).Round(time.Millisecond)
 		return d.String()
-	case "http_client_requests_total", "http_client_errors_total":
-		return humanize.Comma(int64(val))
-	case "http_client_requests_per_second", "http_client_errors_per_second":
+	case "http_client_requests_total", "http_client_errors_total", "http_client_requests_per_second", "http_client_errors_per_second":
 		return humanize.Comma(int64(val))
 	default:
-		if val > 1e12 || (val < 1e-3 && val != 0) {
-			return fmt.Sprintf("%.3e", val)
-		}
 		return fmt.Sprintf("%v", val)
 	}
 }
