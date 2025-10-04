@@ -47,8 +47,12 @@ func runUpload(args []string) {
 		dur = duration.String()
 	}
 
-	fmt.Printf("Running 'upload' with url=%s, concurrency=%d, repetitions=%s, duration=%s, totalsize=%d bytes, chunksize=%d bytes\n",
-		*url, *concurrency, reps, dur, parsedTotalSize, parsedChunkSize)
+	if parsedChunkSize > parsedTotalSize {
+		parsedTotalSize = parsedChunkSize
+	}
+
+	fmt.Printf("Running 'upload' with url=%s, concurrency=%d, repetitions=%s, duration=%s, size=%s, chunk=%s\n",
+		*url, *concurrency, reps, dur, humanize.Bytes(parsedTotalSize), humanize.Bytes(parsedChunkSize))
 
 	client := metrics.NewMeasuringHTTPClient()
 

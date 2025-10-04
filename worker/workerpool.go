@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -54,7 +56,7 @@ func WithInfiniteRepetitions() WorkerPoolOption {
 func WithRateLimit(rps, burst int) WorkerPoolOption {
 	return func(wp *WorkerPool) {
 		if rps > 0 {
-			wp.limiter = rate.NewLimiter(rate.Limit(rps), burst)
+			wp.limiter = rate.NewLimiter(rate.Limit(rps), max(burst, 1))
 		}
 	}
 }
@@ -98,6 +100,7 @@ func (wp *WorkerPool) Launch() *WorkerPool {
 				default:
 					if wp.limiter != nil {
 						if err := wp.limiter.Wait(wp.ctx); err != nil {
+							fmt.Fprintln(os.Stderr, "Rate limiter error:", err)
 							return
 						}
 					}
