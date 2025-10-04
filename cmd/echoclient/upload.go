@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 
 	"github.com/dustin/go-humanize"
 	"github.com/tsaarni/echoclient/generator"
@@ -49,14 +50,20 @@ func runUpload(args []string) {
 	fmt.Printf("Running 'upload' with url=%s, concurrency=%d, repetitions=%s, duration=%s, totalsize=%d bytes, chunksize=%d bytes\n",
 		*url, *concurrency, reps, dur, parsedTotalSize, parsedChunkSize)
 
-	http := metrics.NewMeasuringHTTPClient()
+	client := metrics.NewMeasuringHTTPClient()
 
 	doUpload := func(ctx context.Context) error {
 		reader := generator.NewReader(
 			generator.WithTotalSize(parsedTotalSize),
 			generator.WithChunkSize(parsedChunkSize),
 		)
-		resp, err := http.Post(*url, "application/octet-stream", reader)
+		req, err := http.NewRequestWithContext(ctx, "POST", *url, reader)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/octet-stream")
+
+		resp, err := client.Do(req)
 		if err != nil {
 			return err
 		}

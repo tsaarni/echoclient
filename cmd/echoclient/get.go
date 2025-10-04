@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -43,10 +44,15 @@ func runGet(args []string) {
 
 	fmt.Printf("Running 'get' with url=%s, concurrency=%d, repetitions=%s, duration=%s\n", *url, *concurrency, reps, dur)
 
-	http := metrics.NewMeasuringHTTPClient()
+	client := metrics.NewMeasuringHTTPClient()
 
 	doGet := func(ctx context.Context) error {
-		resp, err := http.Get(*url)
+		req, err := http.NewRequestWithContext(ctx, "GET", *url, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.Do(req)
 		if err != nil {
 			return err
 		}
