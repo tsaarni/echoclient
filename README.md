@@ -71,26 +71,37 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"time"
 
+	"github.com/tsaarni/echoclient/client"
 	"github.com/tsaarni/echoclient/metrics"
 	"github.com/tsaarni/echoclient/worker"
 )
 
 func main() {
-	// Create an HTTP client instrumented for metrics
-	http := metrics.NewMeasuringHTTPClient()
+	// Create an HTTP client instrumented for metrics.
+	httpClient := client.NewMeasuringHTTPClient()
 
-	// Define the load function (e.g., HTTP GET)
+	// Define the load function to be executed by each worker.
+	// This example sends a GET request to the target server, but you can implement more complex sequences,
+	// such as performing authentication followed by multiple requests.
 	loadFunc := func(ctx context.Context) error {
-		resp, err := http.Get("http://localhost:8080/")
-		if resp != nil {
-			resp.Body.Close()
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/", nil)
+		if err != nil {
+			return err
 		}
-		return err
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return nil
 	}
 
-	// Periodically print metrics to the console
+	// Periodically print metrics to the console.
 	ticker := time.NewTicker(5 * time.Second)
 	go func() {
 		for range ticker.C {
@@ -98,7 +109,7 @@ func main() {
 		}
 	}()
 
-	// Create and launch a worker pool
+	// Create and launch a worker pool.
 	pool := worker.NewWorkerPool(
 		loadFunc,
 		worker.WithConcurrency(100),

@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/tsaarni/echoclient/metrics"
 )
 
-func setupMetricsOnInterrupt() {
+func runSubcommand(subcommand string, subArgs []string) {
+	// Print metrics on when interrupted.
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
@@ -20,15 +23,34 @@ func setupMetricsOnInterrupt() {
 		metrics.DumpMetrics()
 		os.Exit(1)
 	}()
-}
 
-func setupPeriodicMetricsDump(interval time.Duration) {
-	ticker := time.NewTicker(interval)
+	// Print metrics every 5 seconds.
+	ticker := time.NewTicker(5 * time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		for range ticker.C {
-			metrics.DumpMetrics()
+		defer wg.Done()
+		for {
+			select {
+			case <-ticker.C:
+				metrics.DumpMetrics()
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
+
+	switch subcommand {
+	case "get":
+		runGet(subArgs)
+	case "upload":
+		runUpload(subArgs)
+	}
+	ticker.Stop()
+	cancel()
+	wg.Wait()
+	metrics.DumpMetrics()
 }
 
 func main() {
@@ -38,15 +60,11 @@ func main() {
 	}
 
 	subcommand := os.Args[1]
-
-	setupMetricsOnInterrupt()
-	setupPeriodicMetricsDump(5 * time.Second)
+	subArgs := os.Args[2:]
 
 	switch subcommand {
-	case "get":
-		runGet(os.Args[2:])
-	case "upload":
-		runUpload(os.Args[2:])
+	case "get", "upload":
+		runSubcommand(subcommand, subArgs)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n", subcommand)
 		os.Exit(1)

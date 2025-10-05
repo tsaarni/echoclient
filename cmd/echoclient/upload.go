@@ -7,8 +7,8 @@ import (
 	"net/http"
 
 	"github.com/dustin/go-humanize"
+	"github.com/tsaarni/echoclient/client"
 	"github.com/tsaarni/echoclient/generator"
-	"github.com/tsaarni/echoclient/metrics"
 	"github.com/tsaarni/echoclient/worker"
 )
 
@@ -54,7 +54,7 @@ func runUpload(args []string) {
 	fmt.Printf("Running 'upload' with url=%s, concurrency=%d, repetitions=%s, duration=%s, size=%s, chunk=%s\n",
 		*url, *concurrency, reps, dur, humanize.Bytes(parsedTotalSize), humanize.Bytes(parsedChunkSize))
 
-	client := metrics.NewMeasuringHTTPClient()
+	client := client.NewMeasuringHTTPClient()
 
 	doUpload := func(ctx context.Context) error {
 		reader := generator.NewReader(
@@ -83,6 +83,4 @@ func runUpload(args []string) {
 	)
 
 	w.Launch().Wait()
-
-	metrics.DumpMetrics()
 }

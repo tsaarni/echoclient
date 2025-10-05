@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/tsaarni/echoclient/metrics"
+	"github.com/tsaarni/echoclient/client"
 	"github.com/tsaarni/echoclient/worker"
 )
 
@@ -44,7 +44,7 @@ func runGet(args []string) {
 
 	fmt.Printf("Running 'get' with url=%s, concurrency=%d, repetitions=%s, duration=%s\n", *url, *concurrency, reps, dur)
 
-	client := metrics.NewMeasuringHTTPClient()
+	client := client.NewMeasuringHTTPClient()
 
 	doGet := func(ctx context.Context) error {
 		req, err := http.NewRequestWithContext(ctx, "GET", *url, nil)
@@ -100,6 +100,4 @@ func runGet(args []string) {
 	}
 
 	w.Launch().Wait()
-
-	metrics.DumpMetrics()
 }
