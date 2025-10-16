@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/tls"
 	"errors"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ func NewMeasuringHTTPClient() http.Client {
 		TLSHandshakeTimeout:   2 * time.Second,
 		ResponseHeaderTimeout: 2 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 	}
 
 	return http.Client{
