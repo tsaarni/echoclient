@@ -44,14 +44,11 @@ func NewReader(opts ...ReaderOption) io.Reader {
 	for _, o := range opts {
 		o(r)
 	}
-	if r.sizeRemaining < 0 {
-		r.sizeRemaining = 0
-	}
 	return r
 }
 
 // WithASCII sets the reader to generate ASCII byte data.
-func WithASCII(mode ContentMode) ReaderOption {
+func WithASCII() ReaderOption {
 	return func(r *Reader) {
 		r.mode = modeASCII
 	}
@@ -110,7 +107,12 @@ func (r *Reader) Read(p []byte) (int, error) {
 
 	switch r.mode {
 	case modeRandom:
-		r.fillRandom(p, toWrite)
+		if r.randSrc != nil {
+			r.fillRandom(p, toWrite)
+		} else {
+			// Fall back to ASCII if randSrc is not initialized
+			r.fillASCII(p, toWrite)
+		}
 	case modeASCII:
 		fallthrough
 	default:

@@ -12,29 +12,21 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// WorkerPool manages concurrent execution of WorkerFuncs.
+// ErrStopWorker is returned by a WorkerFunc to signal that the worker should stop.
+var ErrStopWorker = errors.New("stop worker")
+
+// WorkerPool manages concurrent execution of traffic generating WorkerFuncs.
 type WorkerPool struct {
-	// targetConcurrency is the desired number of workers.
-	targetConcurrency atomic.Int64
-
-	// activeWorkers is the current number of running workers.
-	activeWorkers atomic.Int64
-
-	wg       sync.WaitGroup // Tracks profile execution and worker goroutines.
-	ctx      context.Context
-	cancel   context.CancelFunc
-	worker   WorkerFunc   // The worker function to execute for generating traffic.
-	workerMu sync.RWMutex // Protects worker field.
-
-	// limiter is the rate limiter for the worker pool.
-	limiter *rate.Limiter
-
-	// profile holds the traffic profile steps for execution.
-	profile []*Step
-
-	// remainingReps is the global repetition counter.
-	// -1 means unlimited.
-	remainingReps atomic.Int64
+	targetConcurrency atomic.Int64   // targetConcurrency is the desired number of workers.
+	activeWorkers     atomic.Int64   // activeWorkers is the current number of running workers.
+	wg                sync.WaitGroup // Tracks traffic profile execution and worker goroutines.
+	worker            WorkerFunc     // The worker function to execute for generating traffic.
+	workerMu          sync.RWMutex   // Protects fields that can be updated at runtime.
+	limiter           *rate.Limiter  // limiter is the rate limiter for the worker pool.
+	profile           []*Step        // profile holds the traffic profile steps for execution.
+	remainingReps     atomic.Int64   // remainingReps is remaining worker function calls (or -1 for unlimited).
+	ctx               context.Context
+	cancel            context.CancelFunc
 }
 
 // NewWorkerPool creates a new worker pool.
@@ -51,8 +43,6 @@ func NewMultiStepWorkerPool(worker WorkerFunc, steps []*Step) *WorkerPool {
 		worker:  worker,
 		limiter: rate.NewLimiter(rate.Inf, 0), // Start with no rate limit.
 		profile: steps,
-		// targetConcurrency and activeWorkers default to 0 (atomic.Int64 zero value).
-		// remainingReps defaults to 0, which we set to -1 (unlimited) below.
 	}
 	wp.remainingReps.Store(-1)
 
@@ -81,7 +71,6 @@ func (wp *WorkerPool) LaunchWithContext(ctx context.Context) (*WorkerPool, error
 
 	wp.ctx, wp.cancel = context.WithCancel(ctx)
 
-	// Track profile step execution goroutine.
 	wp.wg.Add(1)
 	go func() {
 		defer wp.wg.Done()
@@ -105,6 +94,8 @@ func (wp *WorkerPool) Stop() {
 
 // SetRateLimit updates the rate limiter's rate and burst at runtime.
 func (wp *WorkerPool) SetRateLimit(rps int, burst int) {
+	wp.workerMu.Lock()
+	defer wp.workerMu.Unlock()
 	if rps > 0 {
 		wp.limiter.SetLimit(rate.Limit(rps))
 		wp.limiter.SetBurst(max(burst, 1))
@@ -151,8 +142,7 @@ func (wp *WorkerPool) GetWorker() WorkerFunc {
 func (wp *WorkerPool) runWorker() {
 	defer wp.wg.Done()
 
-	// Track whether this worker has already decremented activeWorkers.
-	// This ensures we only decrement once, regardless of exit path.
+	// Ensure activeWorkers is decremented on exit only once.
 	decrementedActive := false
 	defer func() {
 		if !decrementedActive {
@@ -169,35 +159,14 @@ func (wp *WorkerPool) runWorker() {
 		default:
 		}
 
-		// If activeWorkers > targetConcurrency, decrement activeWorkers and exit.
-		for {
-			active := wp.activeWorkers.Load()
-			target := wp.targetConcurrency.Load()
-			if active <= target {
-				// No scale down needed, continue working.
-				break
-			}
-			// Try to claim exit slot by decrementing activeWorkers.
-			if wp.activeWorkers.CompareAndSwap(active, active-1) {
-				// Successfully claimed exit slot.
-				decrementedActive = true
-				metrics.WorkerPoolActiveWorkers.Dec()
-				return
-			}
-			// CAS failed, another worker modified activeWorkers. Retry.
+		// Handle scale down if needed.
+		if wp.tryScaleDown(&decrementedActive) {
+			return
 		}
 
-		// Check global repetition limit using atomic operations.
-		// remainingReps == -1 means unlimited repetitions.
-		remainingReps := wp.remainingReps.Load()
-		if remainingReps >= 0 {
-			// Finite repetitions: try to claim one
-			remaining := wp.remainingReps.Add(-1)
-			if remaining < 0 {
-				// No more repetitions available, restore and exit
-				wp.remainingReps.Add(1)
-				return
-			}
+		// Try to claim a repetition slot.
+		if !wp.tryClaimRepetition() {
+			return
 		}
 
 		// Wait for rate limiter.
@@ -206,7 +175,50 @@ func (wp *WorkerPool) runWorker() {
 		}
 
 		worker := wp.GetWorker()
-		_ = worker(wp.ctx, wp)
+		if err := worker(wp.ctx, wp); errors.Is(err, ErrStopWorker) {
+			return
+		}
+	}
+}
+
+// tryScaleDown handles scaling down the worker pool when activeWorkers > targetConcurrency.
+// Returns true if the worker should exit, false otherwise.
+func (wp *WorkerPool) tryScaleDown(decrementedActive *bool) bool {
+	for {
+		active := wp.activeWorkers.Load()
+		target := wp.targetConcurrency.Load()
+		if active <= target {
+			// No scale down needed.
+			return false
+		}
+		// Try to claim exit slot by decrementing activeWorkers.
+		if wp.activeWorkers.CompareAndSwap(active, active-1) {
+			// Successfully claimed exit slot.
+			*decrementedActive = true
+			metrics.WorkerPoolActiveWorkers.Dec()
+			return true
+		}
+		// CAS failed, another worker modified activeWorkers. Retry.
+	}
+}
+
+// tryClaimRepetition attempts to claim a repetition slot.
+// Returns true if the worker should continue, false if repetitions are exhausted.
+func (wp *WorkerPool) tryClaimRepetition() bool {
+	for {
+		remainingReps := wp.remainingReps.Load()
+		// remainingReps == -1 means unlimited repetitions.
+		if remainingReps < 0 {
+			return true // Unlimited repetitions, continue.
+		}
+		if remainingReps == 0 {
+			return false // No more repetitions available.
+		}
+		// Try to atomically claim one repetition.
+		if wp.remainingReps.CompareAndSwap(remainingReps, remainingReps-1) {
+			return true
+		}
+		// CAS failed, another worker modified remainingReps. Retry.
 	}
 }
 
@@ -255,15 +267,15 @@ func (wp *WorkerPool) executeStep(st *Step, ticker *time.Ticker, startRate, star
 	}
 
 	if st.duration == 0 {
-		return wp.executeImmediateStep(st, ticker)
+		return wp.executeUneasedStep(st, ticker)
 	}
 	return wp.executeTimedStep(st, ticker, startRate, startConcurrency)
 }
 
-// executeImmediateStep runs a step with zero duration.
+// executeUneasedStep runs a step with zero duration and no easing functions.
 // It applies the target configuration immediately and waits for completion (if repetitions > 0)
 // or runs indefinitely until cancellation.
-func (wp *WorkerPool) executeImmediateStep(st *Step, ticker *time.Ticker) (int, int) {
+func (wp *WorkerPool) executeUneasedStep(st *Step, ticker *time.Ticker) (int, int) {
 	targetRate := st.rps
 	targetBurst := st.burst
 	targetConcurrency := st.concurrency
@@ -273,11 +285,13 @@ func (wp *WorkerPool) executeImmediateStep(st *Step, ticker *time.Ticker) (int, 
 	wp.SetConcurrency(targetConcurrency)
 
 	if st.repetitions > 0 {
-		// Wait for all global repetitions to complete.
+		// Infinite duration but finite repetitions.
 		for {
 			active := wp.activeWorkers.Load()
-
 			remaining := wp.remainingReps.Load()
+
+			// Check if all repetitions are done.
+			// TODO: move this to workgroup instead of busy-waiting?
 			if active == 0 || remaining <= 0 {
 				break
 			}
@@ -314,35 +328,13 @@ func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate,
 			return targetRate, targetConcurrency
 		}
 
-		t := float64(elapsed) / float64(st.duration)
+		progress := float64(elapsed) / float64(st.duration)
 
-		// Calculate current RPS.
-		currentRPS := targetRate
-		if st.rpsEasing != nil {
-			easedRPS := st.rpsEasing(t)
-			currentRPS = int(float64(startRate) + easedRPS*float64(targetRate-startRate))
-		}
+		// Calculate and apply current parameters with easing.
+		currentRPS := calculateEasedValue(startRate, targetRate, progress, st.rpsEasing)
+		currentConcurrency := calculateEasedValue(startConcurrency, targetConcurrency, progress, st.concurrencyEasing)
 
-		// Calculate current concurrency.
-		currentConcurrency := targetConcurrency
-		if st.concurrencyEasing != nil {
-			easedConcurrency := st.concurrencyEasing(t)
-			currentConcurrency = int(float64(startConcurrency) + easedConcurrency*float64(targetConcurrency-startConcurrency))
-		}
-
-		// Burst is not subject to easing.
-		currentBurst := targetBurst
-
-		// Ensure minimums.
-		if currentRPS < 1 && targetRate > 0 {
-			currentRPS = 1
-		}
-		if currentConcurrency < 1 && targetConcurrency > 0 {
-			currentConcurrency = 1
-		}
-
-		// Update pool.
-		wp.SetRateLimit(currentRPS, currentBurst)
+		wp.SetRateLimit(currentRPS, targetBurst)
 		wp.SetConcurrency(currentConcurrency)
 
 		// Check if repetitions satisfied.
@@ -356,4 +348,18 @@ func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate,
 		case <-ticker.C:
 		}
 	}
+}
+
+// calculateEasedValue computes the current value between start and target using an easing function.
+func calculateEasedValue(start, target int, progress float64, easingFunc func(float64) float64) int {
+	if easingFunc == nil {
+		return target
+	}
+	easedProgress := easingFunc(progress)
+	value := int(float64(start) + easedProgress*float64(target-start))
+	// Ensure minimum of 1 if target is positive.
+	if value < 1 && target > 0 {
+		return 1
+	}
+	return value
 }

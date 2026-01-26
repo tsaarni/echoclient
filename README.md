@@ -3,8 +3,8 @@
 Echoclient is a simple HTTP load testing tool written in Go.
 It can be used in two ways:
 
-- As a command-line tool for running load tests against [echoserver](https://github.com/tsaarni/echoserver) or any HTTP server.
-- As a Go library for building your own custom load testing tools.
+- As a [command-line tool](#using-the-command-line-tool) for running load tests against [echoserver](https://github.com/tsaarni/echoserver) or any HTTP server.
+- As a [Go library](#using-in-own-projects) for building your own custom load testing tools.
 
 ### Using the Command-line Tool
 
@@ -60,67 +60,74 @@ You can specify `-size` and `-chunk` using values like `1GB`, `10MB`, or `64KB`.
 
 ### Using in Own Projects
 
-Echoclient can be imported as a Go module to build custom load testing tools. It provides:
+Echoclient can be imported as a Go library to build custom load testing tools.
 
-- A worker pool for concurrent execution of load functions.
-- Metrics collection and reporting, with HTTP endpoint which Prometheus can scrape.
-- Payload data generation utilities.
+#### Basic Usage
 
-#### Example: Custom Load Test
+Create a `WorkerPool` with a custom Load Function and options for concurrency, duration, or repetitions.
 
 ```go
 package main
 
 import (
-	"context"
-	"io"
-	"net/http"
-	"time"
-
-	"github.com/tsaarni/echoclient/client"
-	"github.com/tsaarni/echoclient/metrics"
-	"github.com/tsaarni/echoclient/worker"
+    "context"
+    "net/http"
+    "time"
+    "github.com/tsaarni/echoclient/worker"
+    "github.com/tsaarni/echoclient/client"
 )
 
 func main() {
-	// Create an HTTP client instrumented for metrics.
-	httpClient := client.NewMeasuringHTTPClient()
+    // 1. Define the work to be done
+    loadFunc := func(ctx context.Context, wp *worker.WorkerPool) error {
+        // ... perform one unit of work (e.g. HTTP request) ...
+        return nil
+    }
 
-	// Define the load function to be executed by each worker.
-	// This example sends a GET request to the target server, but you can implement more complex sequences,
-	// such as performing authentication followed by multiple requests.
-	loadFunc := func(ctx context.Context) error {
-		req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/", nil)
-		if err != nil {
-			return err
-		}
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		return nil
-	}
+    // 2. Create the worker pool with desired options
+    pool := worker.NewWorkerPool(
+        loadFunc,
+        worker.WithConcurrency(10), // 10 concurrent workers
+        worker.WithDuration(10*time.Second), // Run for 10 seconds
+    )
 
-	// Periodically print metrics to the console.
-	ticker := time.NewTicker(5 * time.Second)
-	go func() {
-		for range ticker.C {
-			metrics.DumpMetrics()
-		}
-	}()
-
-	// Create and launch a worker pool.
-	pool := worker.NewWorkerPool(
-		loadFunc,
-		worker.WithConcurrency(100),
-		worker.WithInfiniteRepetitions(),
-	)
-	pool.Launch().Wait()
+    // 3. Launch and wait
+    pool.Launch()
+    pool.Wait()
 }
 ```
 
-You can customize the `loadFunc` to perform any operation: sequence of requests, custom payloads, etc.
+See [examples/simple/main.go](examples/simple/main.go) for a complete runnable example including metrics printing.
 
-See the [package documentation](https://pkg.go.dev/github.com/tsaarni/echoclient) for more advanced usage.
+#### Traffic Profiles
+
+For more complex scenarios, you can define a "Profile" consisting of multiple "Steps". Each step can have its own duration, concurrency, rate limits, and even easing functions for smooth transitions (ramp-up/ramp-down).
+
+```go
+// Define a traffic profile with varying load characteristics
+profile := []*worker.Step{
+    // Step 1: Ramp up to 100 RPS
+    worker.NewStep(
+        worker.WithDuration(5*time.Second),
+        worker.WithRateLimit(100, 100, worker.EasingLinear),
+    ),
+    // Step 2: Consistent load
+    worker.NewStep(
+        worker.WithDuration(10*time.Second),
+        worker.WithRateLimit(100, 100),
+    ),
+}
+
+// Create a MultiStepWorkerPool
+pool := worker.NewMultiStepWorkerPool(loadFunc, profile)
+pool.Launch()
+pool.Wait()
+```
+
+See [examples/steps/main.go](examples/steps/main.go) for a comprehensive example demonstrating:
+- Multi-step execution
+- Linear, EaseIn, and EaseOut transitions
+- Lifecycle hooks (before/after steps)
+- Changing worker behavior per step
+
+See the [package documentation](https://pkg.go.dev/github.com/tsaarni/echoclient) for complete API reference.
