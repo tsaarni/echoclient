@@ -17,7 +17,7 @@ func runGet(args []string) {
 	cmd := flag.NewFlagSet("get", flag.ExitOnError)
 	url := cmd.String("url", "http://localhost:8080", "Server URL")
 	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
-	repetitions := cmd.Int("repetitions", 0, "Number of repetitions per worker (0 = infinite repetitions)")
+	repetitions := cmd.Int("repetitions", 0, "Total number of repetitions across all workers (0 = infinite repetitions)")
 	duration := cmd.Duration("duration", 0, "Duration of the load test (0 = run until repetitions complete)")
 	rps := cmd.Int("rps", 0, "Requests per second allowed across all workers (0 = no limit)")
 	rampUpPeriod := cmd.Duration("ramp-up-period", 0, "Ramp-up period to reach target rps (0 = no ramp-up)")
@@ -46,7 +46,7 @@ func runGet(args []string) {
 
 	client := client.NewMeasuringHTTPClient()
 
-	doGet := func(ctx context.Context) error {
+	doGet := func(ctx context.Context, wp *worker.WorkerPool) error {
 		req, err := http.NewRequestWithContext(ctx, "GET", *url, nil)
 		if err != nil {
 			return err
@@ -61,43 +61,35 @@ func runGet(args []string) {
 		return nil
 	}
 
-	rpsInitial := *rps
-	var rampUpFunc func(w *worker.WorkerPool)
+	var steps []*worker.Step
 
-	if *rps > 0 && *rampUpPeriod > 0 {
-		fmt.Printf("  rps=%d, ramp-up-period=%s\n", *rps, *rampUpPeriod)
-		rpsInitial = 1
-		rampUpFunc = func(w *worker.WorkerPool) {
-			start := time.Now()
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
-
-			for {
-				elapsed := time.Since(start)
-				if elapsed >= *rampUpPeriod {
-					break
-				}
-
-				progress := float64(elapsed) / float64(*rampUpPeriod)
-				target := int(float64(*rps) * progress)
-				w.SetRateLimit(target, target / *concurrency)
-				<-ticker.C
-			}
-			w.SetRateLimit(*rps, *rps / *concurrency)
-		}
+	// Ramp-up (optional).
+	if *rampUpPeriod > 0 {
+		steps = append(steps, worker.NewStep(
+			worker.WithDuration(*rampUpPeriod),
+			worker.WithConcurrency(*concurrency),
+			worker.WithRateLimit(*rps, *rps / *concurrency, worker.EasingLinear),
+		))
 	}
 
-	w := worker.NewWorkerPool(
-		doGet,
+	// Steady traffic.
+	steadyDuration := time.Duration(0) // 0 = infinite.
+	if *duration > *rampUpPeriod {
+		steadyDuration = *duration - *rampUpPeriod // Remaining time after ramp-up.
+	}
+
+	steps = append(steps, worker.NewStep(
+		worker.WithDuration(steadyDuration),
 		worker.WithConcurrency(*concurrency),
+		worker.WithRateLimit(*rps, *rps / *concurrency),
 		worker.WithRepetitions(*repetitions),
-		worker.WithRateLimit(rpsInitial, rpsInitial / *concurrency),
-		worker.WithTimeout(*duration),
-	)
+	))
 
-	if rampUpFunc != nil {
-		go rampUpFunc(w)
+	w := worker.NewMultiStepWorkerPool(doGet, steps)
+
+	if _, err := w.Launch(); err != nil {
+		fmt.Printf("Failed to launch worker pool: %v\n", err)
+		os.Exit(1)
 	}
-
-	w.Launch().Wait()
+	w.Wait()
 }

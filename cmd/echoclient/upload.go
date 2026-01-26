@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/dustin/go-humanize"
 	"github.com/tsaarni/echoclient/client"
@@ -16,7 +17,7 @@ func runUpload(args []string) {
 	cmd := flag.NewFlagSet("upload", flag.ExitOnError)
 	url := cmd.String("url", "http://localhost:8080/upload", "Server URL")
 	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
-	repetitions := cmd.Int("repetitions", 1, "Number of repetitions per worker (0 = infinite repetitions)")
+	repetitions := cmd.Int("repetitions", 1, "Total number of repetitions across all workers (0 = infinite repetitions)")
 	duration := cmd.Duration("duration", 0, "Duration of the load test (0 = run until repetitions complete)")
 	totalSize := cmd.String("size", "10MB", "Total size of data to upload per worker, specified in bytes")
 	chunkSize := cmd.String("chunk", "64KB", "Chunk size for data generation, specified in bytes")
@@ -56,7 +57,7 @@ func runUpload(args []string) {
 
 	client := client.NewMeasuringHTTPClient()
 
-	doUpload := func(ctx context.Context) error {
+	doUpload := func(ctx context.Context, wp *worker.WorkerPool) error {
 		reader := generator.NewReader(
 			generator.WithTotalSize(parsedTotalSize),
 			generator.WithChunkSize(parsedChunkSize),
@@ -75,12 +76,17 @@ func runUpload(args []string) {
 		return nil
 	}
 
-	w := worker.NewWorkerPool(
-		doUpload,
+	opts := []worker.Option{
 		worker.WithConcurrency(*concurrency),
+		worker.WithDuration(*duration),
 		worker.WithRepetitions(*repetitions),
-		worker.WithTimeout(*duration),
-	)
+	}
 
-	w.Launch().Wait()
+	w := worker.NewWorkerPool(doUpload, opts...)
+
+	if _, err := w.Launch(); err != nil {
+		fmt.Printf("Failed to launch worker pool: %v\n", err)
+		os.Exit(1)
+	}
+	w.Wait()
 }

@@ -52,6 +52,13 @@ var (
 			Help: "Current timestamp in seconds since epoch.",
 		},
 	)
+
+	WorkerPoolActiveWorkers = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "worker_pool_active_workers",
+			Help: "Current number of active workers in the pool.",
+		},
+	)
 )
 
 // StartPrometheusServer starts an HTTP server exposing Prometheus metrics at /metrics.

@@ -23,13 +23,15 @@ Flags:
 | ----------------- | --------------------- | ------------------------------------------------------------------- |
 | `-url`            | http://localhost:8080 | Server URL                                                          |
 | `-concurrency`    | 1                     | Number of concurrent workers                                        |
-| `-repetitions`    | 0                     | Number of repetitions per worker<br>_(0 = infinite repetitions)_    |
+| `-repetitions`    | 0                     | Total number of repetitions across all workers<br>_(0 = infinite repetitions)_      |
 | `-duration`       | 0                     | Duration of the load test<br>_(0 = run until repetitions complete)_ |
 | `-rps`            | 0                     | Requests per second allowed across all workers<br>_(0 = no limit)_  |
 | `-ramp-up-period` | 0                     | Ramp-up period to reach target rps<br>_(0 = no ramp-up)_            |
 
 You can specify `-duration` and `-ramp-up-period` with values such as `1h`, `30m`, or `15s`.
 If both `-duration` and `-repetitions` are set, the test will end when either limit is reached first.
+
+Note that requests executed during the `-ramp-up-period` do not count towards the `-repetitions` limit. The repetitions limit applies only to the steady state phase.
 
 #### `upload` subcommand
 
@@ -41,7 +43,7 @@ Flags:
 | Flag           | Default                      | Description                                                         |
 | -------------- | ---------------------------- | ------------------------------------------------------------------- |
 | `-concurrency` | 1                            | Number of concurrent workers                                        |
-| `-repetitions` | 1                            | Number of repetitions per worker<br>_(0 = infinite repetitions)_    |
+| `-repetitions` | 1                            | Total number of repetitions across all workers<br>_(0 = infinite repetitions)_      |
 | `-duration`    | 0                            | Duration of the load test<br>_(0 = run until repetitions complete)_ |
 | `-size`        | 10MB                         | Total size of data to upload per worker, specified in bytes         |
 | `-chunk`       | 64KB                         | Chunk size for data generation, specified in bytes                  |

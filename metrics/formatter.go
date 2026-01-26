@@ -160,7 +160,7 @@ func humanizeMetric(name string, val float64) string {
 	case "process_start_time_seconds", "current_time":
 		t := time.Unix(int64(val), 0)
 		return t.Format("2006-01-02 15:04:05 MST")
-	case "process_max_fds", "process_open_fds", "go_goroutines", "go_threads":
+	case "process_max_fds", "process_open_fds", "go_goroutines", "go_threads", "worker_pool_active_workers":
 		return humanize.Comma(int64(val))
 	case "runtime_seconds", "http_client_request_duration_seconds", "process_cpu_seconds_total":
 		d := time.Duration(val * float64(time.Second)).Round(time.Millisecond)
