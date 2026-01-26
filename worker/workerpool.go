@@ -51,21 +51,21 @@ func NewMultiStepWorkerPool(worker WorkerFunc, steps []*Step) *WorkerPool {
 
 // Launch starts the worker pool and executes all steps in the traffic profile.
 // Use Wait() to block until all workers complete.
-func (wp *WorkerPool) Launch() (*WorkerPool, error) {
+func (wp *WorkerPool) Launch() error {
 	return wp.LaunchWithContext(context.Background())
 }
 
 // LaunchWithContext starts the worker pool with the provided context and executes all steps in the traffic profile.
-func (wp *WorkerPool) LaunchWithContext(ctx context.Context) (*WorkerPool, error) {
+func (wp *WorkerPool) LaunchWithContext(ctx context.Context) error {
 	// Check that profile is not empty.
 	if len(wp.profile) == 0 {
-		return nil, errors.New("worker pool was initialized with no traffic profile steps")
+		return errors.New("worker pool was initialized with no traffic profile steps")
 	}
 
 	// Check that all steps that have easing functions also have non-zero duration.
 	for i, st := range wp.profile {
 		if (st.concurrencyEasing != nil || st.rpsEasing != nil) && st.duration == 0 {
-			return nil, errors.New("traffic profile step " + strconv.Itoa(i) + " has easing functions but zero duration")
+			return errors.New("traffic profile step " + strconv.Itoa(i) + " has easing functions but zero duration")
 		}
 	}
 
@@ -77,7 +77,7 @@ func (wp *WorkerPool) LaunchWithContext(ctx context.Context) (*WorkerPool, error
 		wp.runProfileSteps()
 	}()
 
-	return wp, nil
+	return nil
 }
 
 // Wait blocks until all workers and traffic profile executor has completed.

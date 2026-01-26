@@ -87,7 +87,7 @@ func runGet(args []string) {
 
 	w := worker.NewMultiStepWorkerPool(doGet, steps)
 
-	if _, err := w.Launch(); err != nil {
+	if err := w.Launch(); err != nil {
 		fmt.Printf("Failed to launch worker pool: %v\n", err)
 		os.Exit(1)
 	}

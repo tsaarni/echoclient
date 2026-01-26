@@ -84,7 +84,7 @@ func runUpload(args []string) {
 
 	w := worker.NewWorkerPool(doUpload, opts...)
 
-	if _, err := w.Launch(); err != nil {
+	if err := w.Launch(); err != nil {
 		fmt.Printf("Failed to launch worker pool: %v\n", err)
 		os.Exit(1)
 	}

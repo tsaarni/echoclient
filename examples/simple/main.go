@@ -47,7 +47,7 @@ func main() {
 		worker.WithConcurrency(100),
 		worker.WithInfiniteRepetitions(),
 	)
-	if _, err := pool.Launch(); err != nil {
+	if err := pool.Launch(); err != nil {
 		log.Fatal(err)
 	}
 	pool.Wait()

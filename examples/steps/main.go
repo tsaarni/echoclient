@@ -114,25 +114,19 @@ func main() {
 
 	fmt.Println("Starting traffic profile steps...")
 
-	// Monitor printing in background.
-	ctx, cancel := context.WithCancel(context.Background())
+	// Periodically print metrics to the console.
+	ticker := time.NewTicker(5 * time.Second)
 	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				metrics.DumpMetrics()
-			}
+		for range ticker.C {
+			metrics.DumpMetrics()
 		}
 	}()
 
-	// Launch and wait for completion
-	pool.Launch()
+	// Launch and wait for completion.
+	if err := pool.Launch(); err != nil {
+		panic(err)
+	}
 	pool.Wait()
-	cancel()
 
 	fmt.Println("Traffic profile steps completed.")
 }

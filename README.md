@@ -8,8 +8,22 @@ It can be used in two ways:
 
 ### Using the Command-line Tool
 
+Compile the tool with:
+
+```bash
+go install github.com/tsaarni/echoclient/cmd/echoclient@latest
+```
+
+Then run it with:
+
 ```bash
 echoclient <subcommand> [flags]
+```
+
+Or alternatively run directly with Go compiler
+
+```bash
+go run github.com/tsaarni/echoclient/cmd/echoclient@latest <subcommand> [flags]
 ```
 
 #### `get` subcommand

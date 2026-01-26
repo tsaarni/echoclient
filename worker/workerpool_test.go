@@ -411,7 +411,7 @@ func TestLaunchWithContextEmptyProfile(t *testing.T) {
 		profile: []*Step{},
 	}
 
-	_, err := wp.Launch()
+	err := wp.Launch()
 	if err == nil {
 		t.Error("expected error for empty profile")
 	}
@@ -427,7 +427,7 @@ func TestLaunchWithContextEasingWithoutDuration(t *testing.T) {
 		WithDuration(0), // Zero duration with easing should error
 	)
 
-	_, err := wp.Launch()
+	err := wp.Launch()
 	if err == nil {
 		t.Error("expected error for easing without duration")
 	}
