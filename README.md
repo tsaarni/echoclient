@@ -167,7 +167,7 @@ httpClient := client.NewMeasuringHTTPClient()
 resp, err := httpClient.Get("http://localhost:8080")
 
 // Print metrics to console
-metrics.DumpMetrics()
+metrics.DumpMetrics(os.Stdout)
 ```
 
 Following metrics are printed by the `DumpMetrics()` function:

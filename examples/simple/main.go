@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/tsaarni/echoclient/client"
@@ -37,7 +38,7 @@ func main() {
 	ticker := time.NewTicker(5 * time.Second)
 	go func() {
 		for range ticker.C {
-			metrics.DumpMetrics()
+			metrics.DumpMetrics(os.Stdout)
 		}
 	}()
 

@@ -20,7 +20,7 @@ func runSubcommand(subcommand string, subArgs []string) {
 	go func() {
 		<-sigs
 		fmt.Println("\nInterrupted. Dumping metrics:")
-		metrics.DumpMetrics()
+		metrics.DumpMetrics(os.Stdout)
 		os.Exit(1)
 	}()
 
@@ -34,7 +34,7 @@ func runSubcommand(subcommand string, subArgs []string) {
 		for {
 			select {
 			case <-ticker.C:
-				metrics.DumpMetrics()
+				metrics.DumpMetrics(os.Stdout)
 			case <-ctx.Done():
 				return
 			}
@@ -50,7 +50,7 @@ func runSubcommand(subcommand string, subArgs []string) {
 	ticker.Stop()
 	cancel()
 	wg.Wait()
-	metrics.DumpMetrics()
+	metrics.DumpMetrics(os.Stdout)
 }
 
 func main() {

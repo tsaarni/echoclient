@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"io"
 	"slices"
 	"sort"
 	"strings"
@@ -29,7 +30,7 @@ var prevMetricValues = map[string]map[string]float64{
 var prevMetricsDumpTime time.Time = time.Now()
 
 // DumpMetrics logs the current values of all registered metrics.
-func DumpMetrics() {
+func DumpMetrics(output io.Writer) {
 	runtimeSeconds.Set(time.Since(startTime).Seconds())
 	currentTime.Set(float64(time.Now().Unix()))
 
@@ -47,7 +48,7 @@ func DumpMetrics() {
 		return
 	}
 
-	tabularDump(rows)
+	tabularDump(output, rows)
 }
 
 // buildMetricRows constructs table rows for metrics.

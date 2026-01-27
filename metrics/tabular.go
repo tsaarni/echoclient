@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"text/tabwriter"
 )
 
@@ -13,8 +13,8 @@ const (
 	underline   = "\033[4m"
 )
 
-func tabularDump(rows []tableRow) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+func tabularDump(output io.Writer, rows []tableRow) {
+	w := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "%s%s%sMetric\tLabels\tValue\t%s\n",
 		colorGreen, underline, "", colorReset)
