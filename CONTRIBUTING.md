@@ -36,5 +36,5 @@ go run github.com/tsaarni/echoserver@latest -log-level info
 In another terminal, run the load test commands:
 ```bash
 go run ./cmd/echoclient get
-go run ./cmd/echoclient upload
+go run ./cmd/echoclient upload -size 10GB
 ```

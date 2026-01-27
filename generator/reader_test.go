@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"testing"
+
+	"github.com/dustin/go-humanize"
 )
 
 func TestNewReaderDefaults(t *testing.T) {
@@ -114,8 +116,8 @@ func TestWithChunkSize(t *testing.T) {
 func TestWithChunkSizeZero(t *testing.T) {
 	// ChunkSize of 0 should not change the default
 	r := NewReader(WithTotalSize(100), WithChunkSize(0)).(*Reader)
-	if r.chunkSize != 64*KB {
-		t.Errorf("expected default chunkSize %d, got %d", 64*KB, r.chunkSize)
+	if r.chunkSize != 64*humanize.KiByte {
+		t.Errorf("expected default chunkSize %d, got %d", 64*humanize.KiByte, r.chunkSize)
 	}
 }
 
@@ -178,14 +180,5 @@ func TestSmallBufferReads(t *testing.T) {
 	// Should read only buffer size since it's smaller than chunk size
 	if n != 10 {
 		t.Errorf("expected 10 bytes (buffer size), got %d", n)
-	}
-}
-
-func TestConstants(t *testing.T) {
-	if KB != 1024 {
-		t.Errorf("KB constant should be 1024, got %d", KB)
-	}
-	if MB != 1024*1024 {
-		t.Errorf("MB constant should be 1048576, got %d", MB)
 	}
 }

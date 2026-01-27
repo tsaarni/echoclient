@@ -287,12 +287,9 @@ func (wp *WorkerPool) executeUneasedStep(st *Step, ticker *time.Ticker) (int, in
 	if st.repetitions > 0 {
 		// Infinite duration but finite repetitions.
 		for {
-			active := wp.activeWorkers.Load()
-			remaining := wp.remainingReps.Load()
-
-			// Check if all repetitions are done.
-			// TODO: move this to workgroup instead of busy-waiting?
-			if active == 0 || remaining <= 0 {
+			// Check if repetitions satisfied and workers finished.
+			// TODO: use workgroup instead of polling?
+			if wp.remainingReps.Load() <= 0 && wp.activeWorkers.Load() == 0 {
 				break
 			}
 
@@ -337,8 +334,9 @@ func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate,
 		wp.SetRateLimit(currentRPS, targetBurst)
 		wp.SetConcurrency(currentConcurrency)
 
-		// Check if repetitions satisfied.
-		if st.repetitions > 0 && wp.remainingReps.Load() <= 0 {
+		// Check if repetitions satisfied and workers finished.
+		// TODO: use workgroup instead of polling?
+		if st.repetitions > 0 && wp.remainingReps.Load() <= 0 && wp.activeWorkers.Load() == 0 {
 			return currentRPS, currentConcurrency
 		}
 

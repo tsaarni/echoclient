@@ -612,3 +612,20 @@ func TestWorkerStopConcurrent(t *testing.T) {
 		t.Errorf("Workers did not stop reliably, executed %d times", count)
 	}
 }
+
+func TestLongRunningWorker(t *testing.T) {
+	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
+		time.Sleep(500 * time.Millisecond)
+		return nil
+	}
+
+	wp := NewWorkerPool(workerFunc, WithRepetitions(1), WithDuration(0))
+
+	start := time.Now()
+	wp.Launch()
+	wp.Wait()
+	duration := time.Since(start)
+	if duration < 500*time.Millisecond {
+		t.Errorf("worker pool did not run for at least 500ms, got %s", duration)
+	}
+}

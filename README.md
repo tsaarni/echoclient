@@ -59,14 +59,14 @@ Flags:
 | `-concurrency` | 1                            | Number of concurrent workers                                        |
 | `-repetitions` | 1                            | Total number of repetitions across all workers<br>_(0 = infinite repetitions)_      |
 | `-duration`    | 0                            | Duration of the load test<br>_(0 = run until repetitions complete)_ |
-| `-size`        | 10MB                         | Total size of data to upload per worker, specified in bytes         |
-| `-chunk`       | 64KB                         | Chunk size for data generation, specified in bytes                  |
+| `-size`        | 10MiB                        | Total size of data to upload per worker, specified in bytes         |
+| `-chunk`       | 64KiB                        | Chunk size for data generation, specified in bytes                  |
 | `-url`         | http://localhost:8080/upload | Server URL                                                          |
 
 You can specify `-duration` with values such as `1h`, `30m`, or `15s`.
 If both `-duration` and `-repetitions` are set, the test will end when either limit is reached first.
 
-You can specify `-size` and `-chunk` using values like `1GB`, `10MB`, or `64KB`.
+You can specify `-size` and `-chunk` using values like `1GB`, `10MiB`, or `64KiB`.
 
 #### Example
 
@@ -202,13 +202,13 @@ Options:
 - `WithRandom()`: Generate random binary data.
 - `WithRandomSeed(seed)`: Generate deterministic random binary data from a seed.
 - `WithASCII()`: Generate printable ASCII characters (default).
-- `WithChunkSize(bytes)`: Set the internal chunk size for generation (default 64KB).
+- `WithChunkSize(bytes)`: Set the internal chunk size for generation (default 64KiB).
 
 ```go
-// Create a generator for 1GB of random data
+// Create a generator for 1GiB of random data
 body := generator.NewReader(
     generator.WithRandom(),
-    generator.WithTotalSize(1*generator.GB),
+    generator.WithTotalSize(1*humanize.GiByte),
 )
 
 // Use it in an HTTP request

@@ -4,6 +4,8 @@ import (
 	"io"
 	"math/rand"
 	"time"
+
+	"github.com/dustin/go-humanize"
 )
 
 type ContentMode int
@@ -14,10 +16,6 @@ const (
 )
 
 const (
-	KB = 1024
-	MB = 1024 * KB
-	GB = 1024 * MB
-
 	asciiPrintableStart = byte(' ')
 	asciiPrintableEnd   = byte('~')
 	asciiPrintableRange = int(asciiPrintableEnd - asciiPrintableStart + 1)
@@ -37,7 +35,7 @@ type Reader struct {
 func NewReader(opts ...ReaderOption) io.Reader {
 	r := &Reader{
 		sizeRemaining:     0,
-		chunkSize:         64 * KB,
+		chunkSize:         64 * humanize.KiByte,
 		asciiPatternIndex: 0,
 		mode:              modeASCII,
 		randSrc:           nil,
