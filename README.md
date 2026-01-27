@@ -144,4 +144,66 @@ See [examples/steps/main.go](examples/steps/main.go) for a comprehensive example
 - Lifecycle hooks (before/after steps)
 - Changing worker behavior per step
 
+#### Helper Packages
+
+In addition to the worker pool, echoclient includes helper packages to simplify load testing tasks.
+
+**Metrics-aware HTTP Client**
+
+The [`client`](client/) package provides an HTTP client pre-configured to record Prometheus metrics.
+
+- `NewMeasuringHTTPClient()` returns an `http.Client` with a custom Transport.
+
+The [`metrics`](metrics/) package provides tools for exposing and displaying load test results.
+
+- `StartPrometheusServer(addr)`: Optionally starts an HTTP server (e.g. `:9090`) to expose metrics in Prometheus format at `/metrics` for external monitoring.
+- `DumpMetrics()`: Prints a tabular summary of all registered metrics to the console.
+
+
+Following metrics are printed by the `DumpMetrics()` function:
+- Request duration (`http_client_request_duration_seconds`)
+- Request count (`http_client_requests_total`) partitioned by method, status code, and host.
+- Error count (`http_client_errors_total`)
+- Request rate (`http_client_requests_per_second`)
+- Error rate (`http_client_errors_per_second`)
+- Active workers (`worker_pool_active_workers`)
+- Runtime duration (`runtime_seconds`)
+- Current time (`current_time`)
+- Start time (`process_start_time_seconds`)
+- CPU usage (`process_cpu_seconds_total`) including user and system time
+- Memory usage (`process_resident_memory_bytes`)
+- Network receive bytes (`process_network_receive_bytes_total`)
+- Network transmit bytes (`process_network_transmit_bytes_total`)
+- Open file descriptors (`process_open_fds`)
+- Number of OS threads (`go_threads`)
+- Number of goroutines (`go_goroutines`)
+
+Part of these metrics are collected by the Prometheus Go client library from the Go runtime and OS.
+The available metrics depend on the OS.
+
+
+**Data Generator**
+
+The [`generator`](generator/) package provides a `io.Reader` for generating request bodies on the fly, avoiding memory overhead for large payloads.
+
+- `NewReader(opts...)` creates a new generator.
+
+Common options include:
+- `WithTotalSize(bytes)`: Set the exact size of data to stream (e.g. for `Content-Length`).
+- `WithRandom()`: Generate random binary data.
+- `WithASCII()`: Generate printable ASCII characters (default).
+
+```go
+// Create a generator for 1GB of random data
+body := generator.NewReader(
+    generator.WithRandom(),
+    generator.WithTotalSize(1024*1024*1024),
+)
+
+// Use it in an HTTP request
+req, _ := http.NewRequest("POST", "http://localhost:8080/upload", body)
+```
+
+#### Package Documentation
+
 See the [package documentation](https://pkg.go.dev/github.com/tsaarni/echoclient) for complete API reference.
