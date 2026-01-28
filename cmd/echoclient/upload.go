@@ -28,6 +28,11 @@ func runUpload(args []string) {
 		return
 	}
 
+	if *concurrency <= 0 {
+		fmt.Println("Concurrency must be greater than 0.")
+		os.Exit(1)
+	}
+
 	parsedTotalSize, err := humanize.ParseBytes(*totalSize)
 	if err != nil {
 		fmt.Printf("Invalid totalsize: %v\n", err)

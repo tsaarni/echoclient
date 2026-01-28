@@ -62,10 +62,16 @@ func (wp *WorkerPool) LaunchWithContext(ctx context.Context) error {
 		return errors.New("worker pool was initialized with no traffic profile steps")
 	}
 
-	// Check that all steps that have easing functions also have non-zero duration.
+	// Check that each step has valid configuration.
 	for i, st := range wp.profile {
 		if (st.concurrencyEasing != nil || st.rpsEasing != nil) && st.duration == 0 {
 			return errors.New("traffic profile step " + strconv.Itoa(i) + " has easing functions but zero duration")
+		}
+		if st.concurrency <= 0 {
+			return errors.New("traffic profile step " + strconv.Itoa(i) + " has non-positive concurrency")
+		}
+		if st.rps < 0 {
+			return errors.New("traffic profile step " + strconv.Itoa(i) + " has negative RPS")
 		}
 	}
 

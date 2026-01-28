@@ -27,6 +27,11 @@ func runGet(args []string) {
 		return
 	}
 
+	if *concurrency <= 0 {
+		fmt.Println("Concurrency must be greater than 0.")
+		os.Exit(1)
+	}
+
 	if *rampUpPeriod > 0 && *rps == 0 {
 		fmt.Println("Ramp-up period specified without a target RPS. Ignoring ramp-up.")
 		os.Exit(1)
