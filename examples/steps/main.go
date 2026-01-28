@@ -24,7 +24,9 @@ func main() {
 
 	fmt.Printf("Targeting server at %s\n", ts.URL)
 
-	// Work function.
+	// Define the load function to be executed by each worker in a loop.
+	// This example sends a GET request to the test server, but you can implement more complex sequences,
+	// such as performing authentication followed by multiple requests.
 	loadFuncGet := func(ctx context.Context, wp *worker.WorkerPool) error {
 		req, err := http.NewRequestWithContext(ctx, "GET", ts.URL, nil)
 		if err != nil {
@@ -38,7 +40,8 @@ func main() {
 		return nil
 	}
 
-	// Alternative work function for demonstration.
+	// Alternative load function that sends POST requests.
+	// Demonstrates switching between different load functions during traffic profile steps.
 	loadFuncPost := func(ctx context.Context, wp *worker.WorkerPool) error {
 		req, err := http.NewRequestWithContext(ctx, "POST", ts.URL, nil)
 		if err != nil {
@@ -52,14 +55,15 @@ func main() {
 		return nil
 	}
 
-	// Helper for hooks to match LifeCycleFunc signature
+	// Helper for hooks to match LifeCycleFunc signature.
+	// It prints a separator with the given message.
 	hook := func(msg string) worker.LifeCycleFunc {
 		return func(ctx context.Context, wp *worker.WorkerPool) {
 			printSeparator(msg)
 		}
 	}
 
-	// Define traffic profile with step-specific options.
+	// Define traffic profile with multiple steps.
 	profile := []*worker.Step{
 		worker.NewStep(
 			worker.WithDuration(5*time.Second),
@@ -88,10 +92,9 @@ func main() {
 				hook("Step 3: Finished"),
 			),
 		),
-		// This step uses a different worker function
 		worker.NewStep(
 			worker.WithDuration(2*time.Second),
-			worker.WithWorkerFunc(loadFuncPost), // Override worker for this step
+			worker.WithWorkerFunc(loadFuncPost), // Override load function to start sending POST requests.
 			worker.WithRateLimit(10, 10),
 			worker.WithConcurrency(5),
 			worker.WithHooks(
@@ -110,7 +113,7 @@ func main() {
 		),
 	}
 
-	// Create multi-step worker pool with the profile.
+	// Create multi-step worker pool with the traffic profile defined above.
 	pool := worker.NewMultiStepWorkerPool(loadFuncGet, profile)
 
 	fmt.Println("Starting traffic profile steps...")

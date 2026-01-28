@@ -12,7 +12,7 @@ func TestNewReaderDefaults(t *testing.T) {
 	r := NewReader()
 	buf := make([]byte, 100)
 	n, err := r.Read(buf)
-	// Default sizeRemaining is 0, so should return EOF immediately
+	// Default sizeRemaining is 0, so should return EOF immediately.
 	if err != io.EOF {
 		t.Errorf("expected io.EOF, got %v", err)
 	}
@@ -32,7 +32,7 @@ func TestNewReaderWithTotalSize(t *testing.T) {
 		t.Errorf("expected 100 bytes read, got %d", n)
 	}
 
-	// Second read should return EOF
+	// Second read should return EOF.
 	n, err = r.Read(buf)
 	if err != io.EOF {
 		t.Errorf("expected io.EOF on second read, got %v", err)
@@ -53,7 +53,7 @@ func TestWithASCII(t *testing.T) {
 		t.Errorf("expected 95 bytes, got %d", n)
 	}
 
-	// Check that it contains printable ASCII (space to tilde)
+	// Check that it contains printable ASCII (space to tilde).
 	for i := 0; i < n; i++ {
 		if buf[i] < ' ' || buf[i] > '~' {
 			t.Errorf("byte %d is not printable ASCII: %d", i, buf[i])
@@ -71,7 +71,7 @@ func TestWithRandom(t *testing.T) {
 	if n != 100 {
 		t.Errorf("expected 100 bytes, got %d", n)
 	}
-	// Random should have entropy; a simple check that it's not all zeros
+	// Random should have entropy; a simple check that it's not all zeros.
 	allZeros := true
 	for i := 0; i < n; i++ {
 		if buf[i] != 0 {
@@ -85,7 +85,7 @@ func TestWithRandom(t *testing.T) {
 }
 
 func TestWithRandomSeed(t *testing.T) {
-	// Two readers with the same seed should produce the same output
+	// Two readers with the same seed should produce the same output.
 	r1 := NewReader(WithTotalSize(100), WithRandomSeed(12345))
 	r2 := NewReader(WithTotalSize(100), WithRandomSeed(12345))
 
@@ -107,14 +107,14 @@ func TestWithChunkSize(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	// Should read only chunkSize bytes even though buffer is larger
+	// Should read only chunkSize bytes even though buffer is larger.
 	if n != 100 {
 		t.Errorf("expected 100 bytes (chunk size), got %d", n)
 	}
 }
 
 func TestWithChunkSizeZero(t *testing.T) {
-	// ChunkSize of 0 should not change the default
+	// ChunkSize of 0 should not change the default.
 	r := NewReader(WithTotalSize(100), WithChunkSize(0)).(*Reader)
 	if r.chunkSize != 64*humanize.KiByte {
 		t.Errorf("expected default chunkSize %d, got %d", 64*humanize.KiByte, r.chunkSize)
@@ -143,7 +143,7 @@ func TestReadMultipleChunks(t *testing.T) {
 }
 
 func TestASCIIPatternCycles(t *testing.T) {
-	// Test that ASCII pattern cycles correctly
+	// Test that ASCII pattern cycles correctly.
 	printableRange := int('~' - ' ' + 1) // 95 characters
 	r := NewReader(WithTotalSize(uint64(printableRange*2)), WithASCII())
 	buf := make([]byte, printableRange*2)
@@ -153,17 +153,17 @@ func TestASCIIPatternCycles(t *testing.T) {
 		t.Fatalf("expected %d bytes, got %d", printableRange*2, n)
 	}
 
-	// First cycle should start with ' '
+	// First cycle should start with ' '.
 	if buf[0] != ' ' {
 		t.Errorf("expected first byte to be ' ', got %c", buf[0])
 	}
 
-	// End of first cycle should be '~'
+	// End of first cycle should be '~'.
 	if buf[printableRange-1] != '~' {
 		t.Errorf("expected byte at %d to be '~', got %c", printableRange-1, buf[printableRange-1])
 	}
 
-	// Start of second cycle should be ' ' again
+	// Start of second cycle should be ' ' again.
 	if buf[printableRange] != ' ' {
 		t.Errorf("expected byte at %d to be ' ', got %c", printableRange, buf[printableRange])
 	}
@@ -171,13 +171,13 @@ func TestASCIIPatternCycles(t *testing.T) {
 
 func TestSmallBufferReads(t *testing.T) {
 	r := NewReader(WithTotalSize(1000), WithChunkSize(500))
-	buf := make([]byte, 10) // Buffer smaller than chunk size
+	buf := make([]byte, 10) // Buffer smaller than chunk size.
 	n, err := r.Read(buf)
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	// Should read only buffer size since it's smaller than chunk size
+	// Should read only buffer size since it's smaller than chunk size.
 	if n != 10 {
 		t.Errorf("expected 10 bytes (buffer size), got %d", n)
 	}

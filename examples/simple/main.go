@@ -17,7 +17,7 @@ func main() {
 	// Create an HTTP client instrumented for metrics.
 	httpClient := client.NewMeasuringHTTPClient()
 
-	// Define the load function to be executed by each worker.
+	// Define the load function to be executed by each worker in a loop.
 	// This example sends a GET request to the target server, but you can implement more complex sequences,
 	// such as performing authentication followed by multiple requests.
 	loadFunc := func(ctx context.Context, wp *worker.WorkerPool) error {

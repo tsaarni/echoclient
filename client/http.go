@@ -11,17 +11,23 @@ import (
 	"github.com/tsaarni/echoclient/metrics"
 )
 
+// MeasuringRoundTripper is a wrapper for http.RoundTripper that records Prometheus metrics for each request.
 type MeasuringRoundTripper struct {
 	next http.RoundTripper
 }
 
 // NewMeasuringHTTPClient returns a new http.Client which records Prometheus metrics for each request.
+// The client uses following settings:
+// - 2 second timeout for connecting, TLS handshake and response header to avoid slow connections.
+// - 10000 max connections per host to allow for many concurrent connections.
+// - 10000 max idle connections to avoid closing connections too early.
+// - Disable TLS server certificate verification to allow self-signed certificates.
 func NewMeasuringHTTPClient() http.Client {
 	t := &http.Transport{
-		Dial: (&net.Dialer{
+		DialContext: (&net.Dialer{
 			Timeout:   2 * time.Second,
 			KeepAlive: 30 * time.Second,
-		}).Dial,
+		}).DialContext,
 		ForceAttemptHTTP2:     true,
 		MaxConnsPerHost:       10000,
 		MaxIdleConns:          10000,
@@ -34,10 +40,12 @@ func NewMeasuringHTTPClient() http.Client {
 
 	return http.Client{
 		Transport: NewMeasuringRoundTripper(t),
+		// Timeout:   10 * time.Second,  // Total request timeout.
 	}
 }
 
-// NewMeasuringRoundTripper returns a new InstrumentedRoundTripper wrapping the provided RoundTripper.
+// NewMeasuringRoundTripper returns a new wrapped http.RoundTripper that records Prometheus metrics for each request.
+// This allows for custom transport settings to be used instead of the settings defined in NewMeasuringHTTPClient.
 func NewMeasuringRoundTripper(next http.RoundTripper) http.RoundTripper {
 	if next == nil {
 		next = http.DefaultTransport
@@ -45,7 +53,7 @@ func NewMeasuringRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return &MeasuringRoundTripper{next: next}
 }
 
-// RoundTrip records metrics for each request.
+// RoundTrip is called for each HTTP request and records Prometheus metrics for it.
 func (rt *MeasuringRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
 	resp, err := rt.next.RoundTrip(req)

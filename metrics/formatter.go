@@ -20,7 +20,7 @@ type tableRow struct {
 }
 
 // Previous metric values for rate calculation:
-// These rate metrics are generated client-side for console display, since there is no Prometheus server to perform the calculation.
+// These rate metrics are generated client-side for console display, since there is no Prometheus server to perform the calculation. Normally this would be done e.g. by Grafana.
 // map[metricName][labels]prevValue
 var prevMetricValues = map[string]map[string]float64{
 	"http_client_requests_total": {},
