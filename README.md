@@ -1,4 +1,4 @@
-# echoclient load testing tool
+# Echoclient - load testing tool
 
 Echoclient is a simple HTTP load testing tool written in Go.
 It can be used in two ways:
@@ -70,7 +70,7 @@ You can specify `-size` and `-chunk` using values like `1GB`, `10MiB`, or `64KiB
 
 #### Example
 
-![image of echoclient output](https://github.com/user-attachments/assets/1683651c-b083-418f-93f3-4413632b959f)
+![image of echoclient output](./examples/demo.gif)
 
 ### Using in Own Projects
 
