@@ -1,4 +1,5 @@
-# Echoclient - load testing tool
+![Logo Light](./examples/echoclient-light.png#gh-light-mode-only)
+![Logo Dark](./examples/echoclient-dark.png#gh-dark-mode-only)
 
 Echoclient is a simple HTTP load testing tool written in Go.
 It can be used in two ways:
