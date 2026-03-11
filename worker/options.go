@@ -113,6 +113,17 @@ func WithRepetitions(n int) Option {
 	}
 }
 
+// WithPause creates a pause step that waits for the specified duration without spawning workers.
+//
+// This is useful for adding delays between load test phases.
+// The pause is context-aware and will be interrupted if the context is cancelled.
+func WithPause(d time.Duration) Option {
+	return func(c *Step) {
+		c.duration = d
+		c.pause = true
+	}
+}
+
 // WithInfiniteRepetitions sets unlimited repetitions.
 // This is same as WithRepetitions(0).
 //
@@ -151,6 +162,7 @@ type Step struct {
 	workerFunc        WorkerFunc
 	onStart           LifeCycleFunc
 	onEnd             LifeCycleFunc
+	pause             bool
 }
 
 // NewStep creates a new Step with the given options.
