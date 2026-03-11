@@ -63,6 +63,36 @@ func TestSetConcurrency(t *testing.T) {
 	}
 }
 
+func TestSetConcurrencyAfterWorkersTerminate(t *testing.T) {
+	// Test that SetConcurrency spawns workers even when targetConcurrency
+	// is already at the desired value but workers have terminated.
+	callCount := atomic.Int64{}
+	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
+		callCount.Add(1)
+		return nil
+	}
+
+	profile := []*Step{
+		NewStep(
+			WithConcurrency(10),
+			WithRepetitions(10), // Workers will terminate after 10 calls.
+		),
+		NewStep(
+			WithConcurrency(10), // Same concurrency as step 1.
+			WithRepetitions(10),
+		),
+	}
+
+	wp := NewMultiStepWorkerPool(workerFunc, profile)
+	wp.Launch()
+	wp.Wait()
+
+	// Should have completed 20 calls total (10 from each step).
+	if got := callCount.Load(); got != 20 {
+		t.Errorf("expected 20 calls, got %d", got)
+	}
+}
+
 func TestRunProfile(t *testing.T) {
 	wp := NewWorkerPool(
 		func(ctx context.Context, wp *WorkerPool) error {
@@ -558,6 +588,45 @@ func TestWorkerStopConcurrent(t *testing.T) {
 
 	if count > 5 {
 		t.Errorf("Workers did not stop reliably, executed %d times", count)
+	}
+}
+
+func TestPauseStep(t *testing.T) {
+	callCount := atomic.Int64{}
+	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
+		callCount.Add(1)
+		return nil
+	}
+
+	profile := []*Step{
+		NewStep(
+			WithConcurrency(5),
+			WithRepetitions(10),
+		),
+		NewStep(
+			WithPause(200 * time.Millisecond),
+		),
+		NewStep(
+			WithConcurrency(5),
+			WithRepetitions(10),
+		),
+	}
+
+	wp := NewMultiStepWorkerPool(workerFunc, profile)
+
+	start := time.Now()
+	wp.Launch()
+	wp.Wait()
+	duration := time.Since(start)
+
+	// Should have completed 20 calls total (10 + 10).
+	if got := callCount.Load(); got != 20 {
+		t.Errorf("expected 20 calls, got %d", got)
+	}
+
+	// Should have taken at least 200ms for the pause.
+	if duration < 200*time.Millisecond {
+		t.Errorf("expected at least 200ms duration, got %s", duration)
 	}
 }
 

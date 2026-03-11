@@ -67,7 +67,7 @@ func (wp *WorkerPool) LaunchWithContext(ctx context.Context) error {
 		if (st.concurrencyEasing != nil || st.rpsEasing != nil) && st.duration == 0 {
 			return errors.New("traffic profile step " + strconv.Itoa(i) + " has easing functions but zero duration")
 		}
-		if st.concurrency <= 0 {
+		if !st.pause && st.concurrency <= 0 {
 			return errors.New("traffic profile step " + strconv.Itoa(i) + " has non-positive concurrency")
 		}
 		if st.rps < 0 {
@@ -120,9 +120,16 @@ func (wp *WorkerPool) SetConcurrency(n int) {
 	}
 
 	target := int64(n)
-	oldTarget := wp.targetConcurrency.Swap(target)
+	wp.targetConcurrency.Store(target)
 
-	for i := oldTarget; i < target; i++ {
+	// Only spawn workers if the pool has been launched (ctx is initialized).
+	if wp.ctx == nil {
+		return
+	}
+
+	current := wp.activeWorkers.Load()
+	toSpawn := target - current
+	for i := int64(0); i < toSpawn; i++ {
 		wp.activeWorkers.Add(1)
 		metrics.WorkerPoolActiveWorkers.Inc()
 		wp.wg.Add(1)
@@ -260,6 +267,15 @@ func (wp *WorkerPool) executeStep(st *Step, ticker *time.Ticker, startRate, star
 		}
 	}()
 
+	// Handle pause steps: just wait for the duration.
+	if st.pause {
+		select {
+		case <-time.After(st.duration):
+		case <-wp.ctx.Done():
+		}
+		return startRate, startConcurrency
+	}
+
 	// Apply step configuration: set global repetitions counter.
 	// Convert 0 (user-facing "unlimited") to -1 (internal sentinel).
 	if st.repetitions > 0 {
@@ -324,6 +340,12 @@ func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate,
 		now := time.Now()
 		elapsed := now.Sub(startTime)
 
+		// Check if repetitions satisfied and workers finished.
+		// TODO: use workgroup instead of polling?
+		if st.repetitions > 0 && wp.remainingReps.Load() <= 0 && wp.activeWorkers.Load() == 0 {
+			return targetRate, targetConcurrency
+		}
+
 		if elapsed >= st.duration {
 			// Duration ended: ensure we hit the exact target at the end.
 			wp.SetRateLimit(targetRate, targetBurst)
@@ -339,12 +361,6 @@ func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate,
 
 		wp.SetRateLimit(currentRPS, targetBurst)
 		wp.SetConcurrency(currentConcurrency)
-
-		// Check if repetitions satisfied and workers finished.
-		// TODO: use workgroup instead of polling?
-		if st.repetitions > 0 && wp.remainingReps.Load() <= 0 && wp.activeWorkers.Load() == 0 {
-			return currentRPS, currentConcurrency
-		}
 
 		select {
 		case <-wp.ctx.Done():
