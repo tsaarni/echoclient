@@ -17,8 +17,5 @@ jobs:
       with:
         go-version: 'stable'
 
-    - name: Build
-      run: make build
-
-    - name: Lint and Test
-      run: make check
+    - name: Build and Test
+      run: make
