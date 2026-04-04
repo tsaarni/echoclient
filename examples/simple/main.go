@@ -1,3 +1,4 @@
+// Package main implements the entry point for the simple example.
 package main
 
 import (

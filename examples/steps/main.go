@@ -1,3 +1,4 @@
+// Package main implements the 'steps' example for the echoclient.
 package main
 
 import (

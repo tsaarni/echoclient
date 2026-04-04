@@ -1,3 +1,5 @@
+// Package generator provides functionality for generating data.
+// Package generator provides functionality for generating data.
 package generator
 
 import (
@@ -92,13 +94,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 	}
 
 	// Determine how many bytes to write this call: min(len(p), chunkSize, sizeRemaining)
-	toWrite := r.sizeRemaining
-	if toWrite > r.chunkSize {
-		toWrite = r.chunkSize
-	}
-	if toWrite > uint64(len(p)) {
-		toWrite = uint64(len(p))
-	}
+	toWrite := min(min(r.sizeRemaining, r.chunkSize), uint64(len(p)))
 
 	if toWrite == 0 {
 		return 0, io.EOF
@@ -130,7 +126,7 @@ func (r *Reader) fillRandom(buffer []byte, toWrite uint64) {
 
 // fillASCII fills buffer with an ASCII pattern up to toWrite bytes.
 func (r *Reader) fillASCII(buffer []byte, toWrite uint64) {
-	for i := uint64(0); i < toWrite; i++ {
+	for i := range toWrite {
 		buffer[i] = asciiPrintableStart + byte(r.asciiPatternIndex)
 		r.asciiPatternIndex++
 		if r.asciiPatternIndex >= asciiPrintableRange {

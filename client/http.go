@@ -1,3 +1,5 @@
+// Package client provides HTTP client functionality for the echoclient.
+// Package client provides HTTP client functionality for the echoclient.
 package client
 
 import (

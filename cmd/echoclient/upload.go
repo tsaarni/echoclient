@@ -1,3 +1,4 @@
+// Package main implements the 'upload' command for the echoclient.
 package main
 
 import (

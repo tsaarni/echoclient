@@ -1,3 +1,4 @@
+// Package generator provides functionality for generating data.
 package generator
 
 import (
@@ -54,7 +55,7 @@ func TestWithASCII(t *testing.T) {
 	}
 
 	// Check that it contains printable ASCII (space to tilde).
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if buf[i] < ' ' || buf[i] > '~' {
 			t.Errorf("byte %d is not printable ASCII: %d", i, buf[i])
 		}
@@ -73,7 +74,7 @@ func TestWithRandom(t *testing.T) {
 	}
 	// Random should have entropy; a simple check that it's not all zeros.
 	allZeros := true
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if buf[i] != 0 {
 			allZeros = false
 			break
