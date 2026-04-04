@@ -1,5 +1,4 @@
 // Package generator provides functionality for generating data.
-// Package generator provides functionality for generating data.
 package generator
 
 import (

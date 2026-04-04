@@ -1,4 +1,3 @@
-// Package metrics provides functionality for tabular metrics formatting.
 package metrics
 
 import (
