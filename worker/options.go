@@ -1,4 +1,4 @@
-// Package worker provides functionality for managing worker pools.
+// Package worker provides core logic for the worker pool and task orchestration.
 package worker
 
 import (
