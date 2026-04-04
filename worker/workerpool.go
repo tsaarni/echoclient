@@ -1,3 +1,4 @@
+// Package worker provides core logic for the worker pool and task orchestration.
 package worker
 
 import (
@@ -99,11 +100,9 @@ func (wp *WorkerPool) LaunchWithContext(ctx context.Context) error {
 
 	wp.ctx, wp.cancel = context.WithCancel(ctx)
 
-	wp.wg.Add(1)
-	go func() {
-		defer wp.wg.Done()
+	wp.wg.Go(func() {
 		wp.runProfileSteps()
-	}()
+	})
 
 	return nil
 }
@@ -152,7 +151,7 @@ func (wp *WorkerPool) SetConcurrency(n int) {
 
 	current := wp.activeWorkers.Load()
 	toSpawn := target - current
-	for i := int64(0); i < toSpawn; i++ {
+	for range toSpawn {
 		wp.activeWorkers.Add(1)
 		metrics.WorkerPoolActiveWorkers.Inc()
 		wp.wg.Add(1)

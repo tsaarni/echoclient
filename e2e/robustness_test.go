@@ -1,3 +1,4 @@
+// Package e2e provides end-to-end testing for the echoclient.
 package e2e
 
 import (

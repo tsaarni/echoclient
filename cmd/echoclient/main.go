@@ -1,3 +1,4 @@
+// Package main implements the entry point for the echoclient CLI.
 package main
 
 import (
@@ -28,9 +29,7 @@ func runSubcommand(subcommand string, subArgs []string) {
 	ticker := time.NewTicker(5 * time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			select {
 			case <-ticker.C:
@@ -39,7 +38,7 @@ func runSubcommand(subcommand string, subArgs []string) {
 				return
 			}
 		}
-	}()
+	})
 
 	switch subcommand {
 	case "get":

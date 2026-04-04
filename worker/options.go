@@ -1,3 +1,4 @@
+// Package worker provides functionality for managing worker pools.
 package worker
 
 import (

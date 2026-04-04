@@ -1,3 +1,4 @@
+// Package main implements the 'get' command for the echoclient.
 package main
 
 import (
