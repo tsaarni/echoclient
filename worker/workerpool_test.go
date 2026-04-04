@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -577,8 +578,8 @@ func TestWorkerStopConcurrent(t *testing.T) {
 		return ErrStopWorker
 	}
 
-	// 5 workers, long duration.
-	wp := NewWorkerPool(workerFunc, WithConcurrency(5), WithDuration(100*time.Millisecond))
+	// 5 workers, limit to exactly 5 repetitions so no re-spawning beyond that.
+	wp := NewWorkerPool(workerFunc, WithConcurrency(5), WithRepetitions(5))
 
 	wp.Launch()
 	wp.Wait()
@@ -645,5 +646,206 @@ func TestLongRunningWorker(t *testing.T) {
 	// Should have taken at least 500ms.
 	if duration < 500*time.Millisecond {
 		t.Errorf("worker pool did not run for at least 500ms, got %s", duration)
+	}
+}
+
+func TestIdealTimestampsPresent(t *testing.T) {
+	// Verify that with rate-limited mode, the ideal timestamps in context are present
+	// and evenly spaced (computed as stepStart + seq/rps, sorted by value).
+	var timestamps []time.Time
+	var zeroTimeCount atomic.Int64
+	var mu sync.Mutex
+
+	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
+		st := ScheduledTimeFromContext(ctx)
+		if st.IsZero() {
+			zeroTimeCount.Add(1)
+		}
+		mu.Lock()
+		timestamps = append(timestamps, st)
+		mu.Unlock()
+		return nil
+	}
+
+	wp := NewWorkerPool(
+		workerFunc,
+		WithDuration(200*time.Millisecond),
+		WithRateLimit(100, 100),
+		WithConcurrency(2),
+	)
+
+	wp.Launch()
+	wp.Wait()
+
+	if zeroTimeCount.Load() > 0 {
+		t.Errorf("expected no zero scheduled times in context, got %d", zeroTimeCount.Load())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(timestamps) < 5 {
+		t.Fatalf("expected at least 5 timestamps, got %d", len(timestamps))
+	}
+
+	// Sort by timestamp value: ideal times are computed as stepStart + seq*interval,
+	// so sorted order reflects sequence assignment order.
+	sorted := make([]time.Time, len(timestamps))
+	copy(sorted, timestamps)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && sorted[j].Before(sorted[j-1]); j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+
+	// Verify timestamps are approximately 10ms apart (100 RPS = 10ms interval).
+	expectedInterval := 10 * time.Millisecond
+	tolerance := 2 * time.Millisecond
+	for i := 1; i < len(sorted); i++ {
+		gap := sorted[i].Sub(sorted[i-1])
+		if gap < expectedInterval-tolerance || gap > expectedInterval+tolerance {
+			t.Errorf("timestamp gap [%d] = %v, expected ~%v", i, gap, expectedInterval)
+		}
+	}
+}
+
+func TestUnlimitedRateNoIdealTimestamp(t *testing.T) {
+	// Verify that with RPS=0, no scheduled time appears in context.
+	var sawScheduledTime atomic.Bool
+
+	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
+		st := ScheduledTimeFromContext(ctx)
+		if !st.IsZero() {
+			sawScheduledTime.Store(true)
+		}
+		return nil
+	}
+
+	wp := NewWorkerPool(
+		workerFunc,
+		WithDuration(100*time.Millisecond),
+		WithConcurrency(2),
+		// No WithRateLimit → unlimited rate.
+	)
+
+	wp.Launch()
+	wp.Wait()
+
+	if sawScheduledTime.Load() {
+		t.Error("expected no scheduled time in context for unlimited rate")
+	}
+}
+
+func TestStepTransitionsIdealTimestamps(t *testing.T) {
+	// Multi-step profile with different RPS per step. Verify both steps execute and complete.
+	var step1Calls, step2Calls atomic.Int64
+
+	step1Worker := func(ctx context.Context, wp *WorkerPool) error {
+		step1Calls.Add(1)
+		return nil
+	}
+
+	step2Worker := func(ctx context.Context, wp *WorkerPool) error {
+		step2Calls.Add(1)
+		return nil
+	}
+
+	steps := []*Step{
+		NewStep(
+			WithDuration(100*time.Millisecond),
+			WithConcurrency(2),
+			WithRateLimit(50, 50),
+			WithWorkerFunc(step1Worker),
+		),
+		NewStep(
+			WithDuration(100*time.Millisecond),
+			WithConcurrency(2),
+			WithRateLimit(100, 100),
+			WithWorkerFunc(step2Worker),
+		),
+	}
+
+	wp := NewMultiStepWorkerPool(step1Worker, steps)
+	wp.Launch()
+	wp.Wait()
+
+	if step1Calls.Load() == 0 {
+		t.Error("expected step 1 worker to be called")
+	}
+	if step2Calls.Load() == 0 {
+		t.Error("expected step 2 worker to be called")
+	}
+}
+
+func TestSlowWorkerAccumulatesLatency(t *testing.T) {
+	// Worker that sleeps 50ms with 100 RPS → later requests should have timestamps far in the past.
+	var scheduledTimes []time.Time
+	var receiptTimes []time.Time
+	var mu sync.Mutex
+
+	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
+		now := time.Now()
+		st := ScheduledTimeFromContext(ctx)
+		mu.Lock()
+		scheduledTimes = append(scheduledTimes, st)
+		receiptTimes = append(receiptTimes, now)
+		mu.Unlock()
+		time.Sleep(50 * time.Millisecond) // Slow worker: 50ms per request.
+		return nil
+	}
+
+	wp := NewWorkerPool(
+		workerFunc,
+		WithDuration(300*time.Millisecond),
+		WithRateLimit(100, 100), // 100 RPS = 10ms intervals.
+		WithConcurrency(1),      // Single worker → will fall behind.
+	)
+
+	wp.Launch()
+	wp.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(scheduledTimes) < 3 {
+		t.Fatalf("expected at least 3 data points, got %d", len(scheduledTimes))
+	}
+
+	// Later requests should have increasing queue time (receipt - scheduled).
+	lastQueueTime := receiptTimes[len(receiptTimes)-1].Sub(scheduledTimes[len(scheduledTimes)-1])
+	firstQueueTime := receiptTimes[0].Sub(scheduledTimes[0])
+	if lastQueueTime <= firstQueueTime {
+		t.Errorf("expected queue time to grow over time: first=%v, last=%v", firstQueueTime, lastQueueTime)
+	}
+}
+
+func TestDynamicRPSEasingIdealTimestamps(t *testing.T) {
+	// Step with RPS easing. Verify ideal timestamps are present and requests complete.
+	var callCount atomic.Int64
+	var idealTimePresent atomic.Bool
+
+	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
+		if !ScheduledTimeFromContext(ctx).IsZero() {
+			idealTimePresent.Store(true)
+		}
+		callCount.Add(1)
+		return nil
+	}
+
+	wp := NewWorkerPool(
+		workerFunc,
+		WithDuration(200*time.Millisecond),
+		WithRateLimit(100, 100, EasingLinear),
+		WithConcurrency(4),
+	)
+
+	wp.Launch()
+	wp.Wait()
+
+	if callCount.Load() == 0 {
+		t.Errorf("expected at least one call with dynamic RPS easing, got %d", callCount.Load())
+	}
+	if !idealTimePresent.Load() {
+		t.Error("expected at least some calls to have a scheduled time in context")
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tsaarni/echoclient/metrics"
+	"github.com/tsaarni/echoclient/worker"
 )
 
 // MeasuringRoundTripper is a wrapper for http.RoundTripper that records Prometheus metrics for each request.
@@ -55,7 +56,14 @@ func NewMeasuringRoundTripper(next http.RoundTripper) http.RoundTripper {
 
 // RoundTrip is called for each HTTP request and records Prometheus metrics for it.
 func (rt *MeasuringRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// By using the scheduled start time as the baseline for duration calculation,
+	// we account for any time spent waiting in the worker pool due to rate
+	// limiting or system backpressure, thus correctly mitigating Coordinated Omission.
 	start := time.Now()
+	if scheduledTime := worker.ScheduledTimeFromContext(req.Context()); !scheduledTime.IsZero() {
+		start = scheduledTime
+	}
+
 	resp, err := rt.next.RoundTrip(req)
 	if err != nil {
 		var opErr *net.OpError
