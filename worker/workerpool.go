@@ -15,6 +15,23 @@ import (
 // ErrStopWorker is returned by a WorkerFunc to signal that the worker should stop.
 var ErrStopWorker = errors.New("stop worker")
 
+// contextKeyScheduledTime is a context key for the scheduled request time.
+type contextKeyScheduledTime struct{}
+
+// ScheduledTimeFromContext extracts the scheduled time from the context.
+// If no scheduled time is present (e.g., unlimited rate, or direct usage), returns zero time.
+func ScheduledTimeFromContext(ctx context.Context) time.Time {
+	if t, ok := ctx.Value(contextKeyScheduledTime{}).(time.Time); ok {
+		return t
+	}
+	return time.Time{}
+}
+
+// contextWithScheduledTime returns a new context with the scheduled time set.
+func contextWithScheduledTime(ctx context.Context, t time.Time) context.Context {
+	return context.WithValue(ctx, contextKeyScheduledTime{}, t)
+}
+
 // WorkerPool manages concurrent execution of traffic generating WorkerFuncs.
 type WorkerPool struct {
 	targetConcurrency atomic.Int64   // targetConcurrency is the desired number of workers.
@@ -27,6 +44,11 @@ type WorkerPool struct {
 	remainingReps     atomic.Int64   // remainingReps is remaining worker function calls (or -1 for unlimited).
 	ctx               context.Context
 	cancel            context.CancelFunc
+
+	// Per-step coordinated omission fields (only meaningful when rate > 0)
+	rpsAtom       atomic.Int64 // Current RPS; 0 means unlimited
+	stepStartNano atomic.Int64 // Step start time as UnixNano
+	requestSeq    atomic.Int64 // Monotonically increasing request sequence number
 }
 
 // NewWorkerPool creates a new worker pool.
@@ -105,9 +127,10 @@ func (wp *WorkerPool) SetRateLimit(rps int, burst int) {
 	if rps > 0 {
 		wp.limiter.SetLimit(rate.Limit(rps))
 		wp.limiter.SetBurst(max(burst, 1))
+		wp.rpsAtom.Store(int64(rps))
 	} else {
-		// Disable limit
 		wp.limiter.SetLimit(rate.Inf)
+		wp.rpsAtom.Store(0)
 	}
 }
 
@@ -182,13 +205,40 @@ func (wp *WorkerPool) runWorker() {
 			return
 		}
 
-		// Wait for rate limiter.
-		if err := wp.limiter.Wait(wp.ctx); err != nil {
-			return
+		// Compute the ideal scheduled time for this request before any pacing wait.
+		// By assigning a sequence number now, we capture when the request *should*
+		// have started: idealTime = stepStart + seq * (1/rps).
+		//
+		// We pass this time via context to the worker function. The metrics collector
+		// will use this as the start time for latency measurements, ensuring that
+		// any queuing delay or scheduler jitter is correctly attributed to the
+		// response time, thus mitigating the Coordinated Omission problem.
+		//
+		// Sleep until idealTime for pacing. If idealTime is already past (workers
+		// are behind schedule), proceed immediately — correct behavior.
+		var workerCtx context.Context = wp.ctx
+		if rps := wp.rpsAtom.Load(); rps > 0 {
+			seq := wp.requestSeq.Add(1) - 1 // 0-indexed
+			interval := time.Second / time.Duration(rps)
+			idealTime := time.Unix(0, wp.stepStartNano.Load()).Add(time.Duration(seq) * interval)
+			workerCtx = contextWithScheduledTime(wp.ctx, idealTime)
+
+			if delay := time.Until(idealTime); delay > 0 {
+				select {
+				case <-time.After(delay):
+				case <-wp.ctx.Done():
+					return
+				}
+			}
+		} else {
+			// Unlimited mode: rate.Inf limiter returns immediately.
+			if err := wp.limiter.Wait(wp.ctx); err != nil {
+				return
+			}
 		}
 
 		worker := wp.GetWorker()
-		if err := worker(wp.ctx, wp); errors.Is(err, ErrStopWorker) {
+		if err := worker(workerCtx, wp); errors.Is(err, ErrStopWorker) {
 			return
 		}
 	}
@@ -287,6 +337,10 @@ func (wp *WorkerPool) executeStep(st *Step, ticker *time.Ticker, startRate, star
 	if st.workerFunc != nil {
 		wp.SetWorker(st.workerFunc)
 	}
+
+	// Reset per-step coordinated omission state.
+	wp.stepStartNano.Store(time.Now().UnixNano())
+	wp.requestSeq.Store(0)
 
 	if st.duration == 0 {
 		return wp.executeUneasedStep(st, ticker)
