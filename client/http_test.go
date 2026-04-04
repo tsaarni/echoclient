@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -150,7 +151,7 @@ func TestMeasuringRoundTripperWithDifferentStatusCodes(t *testing.T) {
 	statusCodes := []int{200, 201, 400, 404, 500, 502, 503}
 
 	for _, code := range statusCodes {
-		t.Run("status_"+string(rune(code)), func(t *testing.T) {
+		t.Run("status_"+strconv.Itoa(code), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(code)
 			}))
