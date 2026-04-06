@@ -163,10 +163,10 @@ func humanizeMetric(name string, val float64) string {
 		return t.Format("2006-01-02 15:04:05 MST")
 	case "process_max_fds", "process_open_fds", "go_goroutines", "go_threads", "worker_pool_active_workers":
 		return humanize.Comma(int64(val))
-	case "runtime_seconds", "http_client_request_duration_seconds", "process_cpu_seconds_total":
+	case "runtime_seconds", "http_client_request_duration_seconds", "scheduler_request_latency_seconds", "process_cpu_seconds_total":
 		d := time.Duration(val * float64(time.Second)).Round(time.Millisecond)
 		return d.String()
-	case "http_client_requests_total", "http_client_errors_total", "http_client_requests_per_second", "http_client_errors_per_second":
+	case "http_client_requests_total", "http_client_errors_total", "http_client_requests_per_second", "http_client_errors_per_second", "scheduler_skipped_requests_total":
 		return humanize.Comma(int64(val))
 	default:
 		return fmt.Sprintf("%v", val)

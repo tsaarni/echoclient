@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/tsaarni/echoclient/metrics"
-	"golang.org/x/time/rate"
 )
 
 // ErrStopWorker is returned by a WorkerFunc to signal that the worker should stop.
@@ -40,16 +39,14 @@ type WorkerPool struct {
 	wg                sync.WaitGroup // Tracks traffic profile execution and worker goroutines.
 	worker            WorkerFunc     // The worker function to execute for generating traffic.
 	workerMu          sync.RWMutex   // Protects fields that can be updated at runtime.
-	limiter           *rate.Limiter  // limiter is the rate limiter for the worker pool.
+	scheduler         *RequestScheduler // scheduler is the GCRA-based request scheduler with CO tracking.
 	profile           []*Step        // profile holds the traffic profile steps for execution.
-	remainingReps     atomic.Int64   // remainingReps is remaining worker function calls (or -1 for unlimited).
+	isUnlimited       atomic.Bool    // isUnlimited indicates if the current step has unlimited repetitions.
+	remainingReps     atomic.Int64   // remainingReps is remaining worker function calls (when isUnlimited is false).
 	ctx               context.Context
 	cancel            context.CancelFunc
 
-	// Per-step coordinated omission fields (only meaningful when rate > 0)
-	rpsAtom       atomic.Int64 // Current RPS; 0 means unlimited
-	stepStartNano atomic.Int64 // Step start time as UnixNano
-	requestSeq    atomic.Int64 // Monotonically increasing request sequence number
+	rpsAtom atomic.Int64 // Current RPS; 0 means unlimited (read by RequestScheduler.Take)
 }
 
 // NewWorkerPool creates a new worker pool.
@@ -63,11 +60,11 @@ func NewWorkerPool(worker WorkerFunc, opts ...Option) *WorkerPool {
 // The worker function is required, but can be overridden in each step with worker.WithWorkerFunc() option.
 func NewMultiStepWorkerPool(worker WorkerFunc, steps []*Step) *WorkerPool {
 	wp := &WorkerPool{
-		worker:  worker,
-		limiter: rate.NewLimiter(rate.Inf, 0), // Start with no rate limit.
-		profile: steps,
+		worker:    worker,
+		scheduler: NewRequestScheduler(),
+		profile:   steps,
 	}
-	wp.remainingReps.Store(-1)
+	wp.isUnlimited.Store(true)
 
 	return wp
 }
@@ -121,14 +118,11 @@ func (wp *WorkerPool) Stop() {
 
 // SetRateLimit updates the rate limiter's rate and burst at runtime.
 func (wp *WorkerPool) SetRateLimit(rps int, burst int) {
-	wp.workerMu.Lock()
-	defer wp.workerMu.Unlock()
 	if rps > 0 {
-		wp.limiter.SetLimit(rate.Limit(rps))
-		wp.limiter.SetBurst(max(burst, 1))
 		wp.rpsAtom.Store(int64(rps))
+		maxCatchup := time.Duration(float64(max(burst, 1)) / float64(rps) * float64(time.Second))
+		wp.scheduler.SetMaxCatchup(maxCatchup)
 	} else {
-		wp.limiter.SetLimit(rate.Inf)
 		wp.rpsAtom.Store(0)
 	}
 }
@@ -199,45 +193,28 @@ func (wp *WorkerPool) runWorker() {
 			return
 		}
 
-		// Try to claim a repetition slot.
-		if !wp.tryClaimRepetition() {
+		// Try to claim a repetition. If no more repetitions remain, exit.
+		if !wp.shouldContinue() {
 			return
 		}
 
-		// Compute the ideal scheduled time for this request before any pacing wait.
-		// By assigning a sequence number now, we capture when the request *should*
-		// have started: idealTime = stepStart + seq * (1/rps).
-		//
-		// We pass this time via context to the worker function. The metrics collector
-		// will use this as the start time for latency measurements, ensuring that
-		// any queuing delay or scheduler jitter is correctly attributed to the
-		// response time, thus mitigating the Coordinated Omission problem.
-		//
-		// Sleep until idealTime for pacing. If idealTime is already past (workers
-		// are behind schedule), proceed immediately — correct behavior.
-		var workerCtx context.Context = wp.ctx
-		if rps := wp.rpsAtom.Load(); rps > 0 {
-			seq := wp.requestSeq.Add(1) - 1 // 0-indexed
-			interval := time.Second / time.Duration(rps)
-			idealTime := time.Unix(0, wp.stepStartNano.Load()).Add(time.Duration(seq) * interval)
-			workerCtx = contextWithScheduledTime(wp.ctx, idealTime)
-
-			if delay := time.Until(idealTime); delay > 0 {
-				select {
-				case <-time.After(delay):
-				case <-wp.ctx.Done():
-					return
-				}
-			}
-		} else {
-			// Unlimited mode: rate.Inf limiter returns immediately.
-			if err := wp.limiter.Wait(wp.ctx); err != nil {
-				return
-			}
+		// Take() handles both pacing and context enrichment.
+		// When rate-limited, it blocks until the scheduled time and returns a context
+		// with the scheduled time embedded. When unlimited, it returns ctx unchanged.
+		workerCtx, err := wp.scheduler.Take(wp.ctx, &wp.rpsAtom)
+		if err != nil {
+			return // Context cancelled.
 		}
 
 		worker := wp.GetWorker()
-		if err := worker(workerCtx, wp); errors.Is(err, ErrStopWorker) {
+		err = worker(workerCtx, wp)
+
+		// Record CO-corrected latency at the worker level.
+		if st := ScheduledTimeFromContext(workerCtx); !st.IsZero() {
+			metrics.SchedulerRequestLatencySeconds.WithLabelValues().Observe(time.Since(st).Seconds())
+		}
+
+		if errors.Is(err, ErrStopWorker) {
 			return
 		}
 	}
@@ -264,24 +241,17 @@ func (wp *WorkerPool) tryScaleDown(decrementedActive *bool) bool {
 	}
 }
 
-// tryClaimRepetition attempts to claim a repetition slot.
-// Returns true if the worker should continue, false if repetitions are exhausted.
-func (wp *WorkerPool) tryClaimRepetition() bool {
-	for {
-		remainingReps := wp.remainingReps.Load()
-		// remainingReps == -1 means unlimited repetitions.
-		if remainingReps < 0 {
-			return true // Unlimited repetitions, continue.
-		}
-		if remainingReps == 0 {
-			return false // No more repetitions available.
-		}
-		// Try to atomically claim one repetition.
-		if wp.remainingReps.CompareAndSwap(remainingReps, remainingReps-1) {
-			return true
-		}
-		// CAS failed, another worker modified remainingReps. Retry.
+// shouldContinue decides whether the worker should continue executing based on the remaining repetitions.
+func (wp *WorkerPool) shouldContinue() bool {
+	if wp.isUnlimited.Load() {
+		return true
 	}
+
+	if wp.remainingReps.Add(-1) < 0 {
+		return false
+	}
+
+	return true
 }
 
 // runProfileSteps executes the traffic profile steps on the worker pool.
@@ -326,11 +296,11 @@ func (wp *WorkerPool) executeStep(st *Step, ticker *time.Ticker, startRate, star
 	}
 
 	// Apply step configuration: set global repetitions counter.
-	// Convert 0 (user-facing "unlimited") to -1 (internal sentinel).
 	if st.repetitions > 0 {
+		wp.isUnlimited.Store(false)
 		wp.remainingReps.Store(int64(st.repetitions))
 	} else {
-		wp.remainingReps.Store(-1)
+		wp.isUnlimited.Store(true)
 	}
 
 	if st.workerFunc != nil {
@@ -338,8 +308,7 @@ func (wp *WorkerPool) executeStep(st *Step, ticker *time.Ticker, startRate, star
 	}
 
 	// Reset per-step coordinated omission state.
-	wp.stepStartNano.Store(time.Now().UnixNano())
-	wp.requestSeq.Store(0)
+	wp.scheduler.Reset(time.Now())
 
 	if st.duration == 0 {
 		return wp.executeUneasedStep(st, ticker)
