@@ -9,7 +9,7 @@ build: ## Build binary
 
 .PHONY: test
 test: ## Run tests
-	go test -race -v ./...
+	go test -race -v -timeout 2m ./...
 
 .PHONY: lint
 lint: ## Run linters
