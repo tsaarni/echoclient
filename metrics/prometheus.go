@@ -60,6 +60,22 @@ var (
 			Help: "Current number of active workers in the pool.",
 		},
 	)
+
+	SchedulerRequestLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "scheduler_request_latency_seconds",
+			Help:    "Request latency including wait time when all workers are busy due to slow server responses.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{},
+	)
+
+	SchedulerSkippedRequestsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "scheduler_skipped_requests_total",
+			Help: "Number of requests that were never sent because the server was too slow and the scheduler skipped ahead to catch up.",
+		},
+	)
 )
 
 // StartPrometheusServer starts an HTTP server exposing Prometheus metrics at /metrics.

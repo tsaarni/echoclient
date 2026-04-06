@@ -73,7 +73,8 @@ func (h *E2ETestFixture) Host() string {
 func RunPool(h *E2ETestFixture, opts ...worker.Option) {
 	wp := worker.NewWorkerPool(
 		func(ctx context.Context, wp *worker.WorkerPool) error {
-			_, _ = h.Client.Get(h.Server.URL)
+			req, _ := http.NewRequestWithContext(ctx, "GET", h.Server.URL, nil)
+			_, _ = h.Client.Do(req)
 			return nil
 		},
 		opts...,
