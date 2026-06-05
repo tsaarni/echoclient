@@ -1,26 +1,26 @@
-![Logo Light](./examples/echoclient-light.png#gh-light-mode-only)
-![Logo Dark](./examples/echoclient-dark.png#gh-dark-mode-only)
+# Echoclient
 
-**Echoclient** is a programmable load testing package for Go.
-The library provides an API that can be used to create deterministic traffic scenarios. It supports features like:
+Echoclient is a load testing package for Go. It supports:
 
-- **Workload modeling** using traffic profiles to define load patterns.
-- **Traffic shaping** with easing functions to simulate realistic load transitions.
-- **Observability** via built-in metrics for real-time performance monitoring.
+- **Workload modeling** to define load patterns.
+- **Traffic shaping** with easing functions.
+- **Metrics** for real-time performance monitoring.
 
 It also includes a command-line tool for quick HTTP load tests.
 
 ![Demo](./examples/demo.gif)
 
-### Introduction
-
-Install the package:
+## Installation
 
 ```bash
 go get github.com/tsaarni/echoclient
 ```
 
-**Simple Usage:**
+## Examples
+
+### Simple Usage
+
+Runs a customized load function (not limited to HTTP) using 10 concurrent workers for 10 seconds.
 
 ```go
 loadFunc := func(ctx context.Context, wp *worker.WorkerPool) error {
@@ -40,11 +40,9 @@ pool.Launch()
 pool.Wait()
 ```
 
-This example sends HTTP GET requests to `http://localhost:8080` for 10 seconds using 10 concurrent workers.
-Each worker repeatedly executes `loadFunc`, which can be customized for any type of load generation, not just HTTP.
+### Multi-Step Traffic Profile
 
-
-**Multi-Step Traffic Profile:**
+Ramps up to 100 RPS over 5 seconds, holds it for 10 seconds while scaling workers from 10 to 20, and ramps down to zero over 5 seconds.
 
 ```go
 profile := []*worker.Step{
@@ -68,20 +66,15 @@ pool.Launch()
 pool.Wait()
 ```
 
-This example creates a traffic profile that ramps up to 100 RPS over 5 seconds, maintains it for 10 seconds while scaling workers from 10 to 20, and then ramps down to zero over the final 5 seconds using an easing function for smooth transitions.
+### Worker Composition
 
-**Worker Function Composition:**
-
-You can compose worker functions to build complex, realistic load behaviors:
-
-* **Traffic Mix**: Use `worker.Mix` to distribute workload actions probabilistically (e.g. 80% Reads, 20% Writes).
-* **Transient Error Recovery**: Use `.Retry` or `.RetryWithBackoff` methods on `WorkerFunc` to recover from transient failures.
+Composes multiple tasks with relative weights (e.g. 80% reads, 20% writes) and retry behaviors.
 
 ```go
 var readFunc worker.WorkerFunc = func(ctx context.Context, wp *worker.WorkerPool) error { /* ... */ }
 var writeFunc worker.WorkerFunc = func(ctx context.Context, wp *worker.WorkerPool) error { /* ... */ }
 
-// Mix readAction (80%) and writeAction (20%) using relative weights (4 and 1 sum to 5)
+// Mix read (weight 4) and write (weight 1)
 composedWorker := worker.Mix(
     readFunc.Weighted(4),
     writeFunc.Retry(3, 100*time.Millisecond).Weighted(1),
@@ -92,25 +85,9 @@ pool.Launch()
 pool.Wait()
 ```
 
-**Metrics-aware HTTP Client:**
+### Test Data Generator
 
-```go
-httpClient := client.NewMeasuringHTTPClient()
-resp, err := httpClient.Get("http://localhost:8080")
-
-metrics.DumpMetrics(os.Stdout)
-
-go metrics.StartPrometheusServer(":9090")
-```
-
-This client automatically tracks per-request metrics and system resource usage, and can output them to the console or expose them to Prometheus.
-
-The `DumpMetrics()` function writes a snapshot of the currently collected metrics.
-You can call it during a load test for live monitoring or after the test to inspect the results.
-
-Optionally, the `StartPrometheusServer()` function can be used to expose metrics on an HTTP endpoint for Prometheus scraping.
-
-**Test Data Generator:**
+Streams random data of a specific size without loading all of it into memory.
 
 ```go
 body := generator.NewReader(
@@ -121,36 +98,51 @@ body := generator.NewReader(
 req, _ := http.NewRequest("POST", "http://localhost:8080/upload", body)
 ```
 
-This generates a stream of random data of the specified size without loading it all into memory at once, making it suitable for testing upload endpoints.
+## Metrics & Observability
 
-### Collected Metrics
+Echoclient automatically tracks metrics when using the `MeasuringHTTPClient` or `WorkerPool`.
 
-The following metrics are automatically collected and exposed by the `MeasuringHTTPClient` and the worker pool:
+```go
+httpClient := client.NewMeasuringHTTPClient()
+resp, err := httpClient.Get("http://localhost:8080")
 
-- **Requests**: Duration, count (by method/status/host), and rate.
-- **Errors**: Total error count and error rate.
-- **Workers**: Number of active concurrent workers.
-- **System**: CPU usage (user/system), Memory usage (RSS).
-- **Network**: Bytes received and transmitted.
+// Print snapshot to standard out
+metrics.DumpMetrics(os.Stdout)
+
+// Or expose to Prometheus
+go metrics.StartPrometheusServer(":9090")
+```
+
+The collected metrics include:
+
+- **Requests**: Count, rate, and duration (by method, host, and status code).
+- **Errors**: Total count and rate.
+- **Workers**: Active concurrent worker count.
+- **System**: User/system CPU usage and RSS memory usage.
+- **Network**: Bytes transmitted and received.
 - **Resources**: Open file descriptors, OS threads, and goroutines.
 
-### Command-Line Tool
+## Command-Line Tool
 
-Install and run:
+### Installation
 
 ```bash
 go install github.com/tsaarni/echoclient/cmd/echoclient@latest
+```
 
+### Usage
+
+```bash
 echoclient get -url http://localhost:8080 -concurrency 10 -duration 30s -rps 100
 ```
 
-**Subcommands:**
-- `get` - Send HTTP GET requests with concurrency, rate limiting, ramp-up
-- `upload` - Upload generated data with configurable size and chunk size
+Subcommands:
+- `get` - Send GET requests with concurrency, rate limiting, and ramp-up.
+- `upload` - Upload generated data.
 
-Run `echoclient <subcommand> -help` for all options.
+Run `echoclient <subcommand> -help` for options.
 
-### Documentation
+## Documentation
 
-- [Package documentation (pkg.go.dev)](https://pkg.go.dev/github.com/tsaarni/echoclient)
-- [Examples](examples/)
+- [Package API Documentation](https://pkg.go.dev/github.com/tsaarni/echoclient)
+- [Examples](./examples/)
