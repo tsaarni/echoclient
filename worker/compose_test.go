@@ -201,3 +201,140 @@ func TestRetryWithBackoff(t *testing.T) {
 		}
 	})
 }
+
+func TestCompositionValidation(t *testing.T) {
+	// 1. Mix validation
+	t.Run("MixNilFunc", func(t *testing.T) {
+		mixed := Mix(Weighted{Weight: 10, Func: nil})
+		err := mixed(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+
+	// 2. Retry validation
+	t.Run("RetryNilFunc", func(t *testing.T) {
+		var f WorkerFunc
+		retried := f.Retry(3, 10*time.Millisecond)
+		err := retried(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+
+	t.Run("RetryZeroAttempts", func(t *testing.T) {
+		var dummy WorkerFunc = func(ctx context.Context, wp *WorkerPool) error { return nil }
+		retried := dummy.Retry(0, 10*time.Millisecond)
+		err := retried(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+
+	t.Run("RetryNegativeDelay", func(t *testing.T) {
+		var dummy WorkerFunc = func(ctx context.Context, wp *WorkerPool) error { return nil }
+		retried := dummy.Retry(3, -5*time.Millisecond)
+		err := retried(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+
+	// 3. RetryWithBackoff validation
+	t.Run("RetryWithBackoffNilFunc", func(t *testing.T) {
+		var f WorkerFunc
+		retried := f.RetryWithBackoff(3, 10*time.Millisecond, 100*time.Millisecond)
+		err := retried(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+
+	t.Run("RetryWithBackoffZeroAttempts", func(t *testing.T) {
+		var dummy WorkerFunc = func(ctx context.Context, wp *WorkerPool) error { return nil }
+		retried := dummy.RetryWithBackoff(0, 10*time.Millisecond, 100*time.Millisecond)
+		err := retried(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+
+	t.Run("RetryWithBackoffNegativeMinDelay", func(t *testing.T) {
+		var dummy WorkerFunc = func(ctx context.Context, wp *WorkerPool) error { return nil }
+		retried := dummy.RetryWithBackoff(3, -1*time.Second, 1*time.Second)
+		err := retried(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+
+	t.Run("RetryWithBackoffMaxLessThanMin", func(t *testing.T) {
+		var dummy WorkerFunc = func(ctx context.Context, wp *WorkerPool) error { return nil }
+		retried := dummy.RetryWithBackoff(3, 100*time.Millisecond, 10*time.Millisecond)
+		err := retried(context.Background(), nil)
+		if !errors.Is(err, ErrStopWorker) {
+			t.Errorf("expected ErrStopWorker, got %v", err)
+		}
+	})
+}
+
+func TestRetryZeroDelay(t *testing.T) {
+	var calls int
+	var f WorkerFunc = func(ctx context.Context, wp *WorkerPool) error {
+		calls++
+		if calls < 3 {
+			return errors.New("fail")
+		}
+		return nil
+	}
+
+	retried := f.Retry(5, 0)
+	err := retried(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("expected success with zero delay, got err: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 calls, got %d", calls)
+	}
+}
+
+func TestRetryWithBackoffZeroDelay(t *testing.T) {
+	var calls int
+	var f WorkerFunc = func(ctx context.Context, wp *WorkerPool) error {
+		calls++
+		if calls < 3 {
+			return errors.New("fail")
+		}
+		return nil
+	}
+
+	retried := f.RetryWithBackoff(5, 0, 0)
+	err := retried(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("expected success with zero delay, got err: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 calls, got %d", calls)
+	}
+}
+
+func TestRetryPreCancelledContext(t *testing.T) {
+	var calls int
+	var f WorkerFunc = func(ctx context.Context, wp *WorkerPool) error {
+		calls++
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	retried := f.Retry(3, 10*time.Millisecond)
+	err := retried(ctx, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if calls != 0 {
+		t.Errorf("expected 0 calls on pre-cancelled context, got %d", calls)
+	}
+}
+
