@@ -216,3 +216,64 @@ func TestWorkerStopConcurrent(t *testing.T) {
 		t.Errorf("Workers did not stop reliably, executed %d times", count)
 	}
 }
+
+func TestSetWorker(t *testing.T) {
+	var callCountA atomic.Int64
+	var callCountB atomic.Int64
+
+	workerA := func(ctx context.Context, wp *WorkerPool) error {
+		callCountA.Add(1)
+		wp.SetWorker(func(ctx context.Context, wp *WorkerPool) error {
+			callCountB.Add(1)
+			return nil
+		})
+		return nil
+	}
+
+	wp := NewWorkerPool(workerA, WithConcurrency(1), WithRepetitions(2))
+	_ = wp.Launch()
+	wp.Wait()
+
+	if callCountA.Load() != 1 {
+		t.Errorf("expected workerA to run 1 time, got %d", callCountA.Load())
+	}
+	if callCountB.Load() != 1 {
+		t.Errorf("expected workerB to run 1 time, got %d", callCountB.Load())
+	}
+}
+
+func TestWithInfiniteRepetitions(t *testing.T) {
+	st := NewStep(WithInfiniteRepetitions())
+	if st.repetitions != 0 {
+		t.Errorf("expected repetitions to be 0, got %d", st.repetitions)
+	}
+}
+
+func TestSetConcurrencyBeforeLaunch(t *testing.T) {
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error { return nil })
+	wp.SetConcurrency(5)
+	if wp.targetConcurrency.Load() != 5 {
+		t.Errorf("expected targetConcurrency to be 5, got %d", wp.targetConcurrency.Load())
+	}
+	if wp.getActiveWorkers() != 0 {
+		t.Errorf("expected activeWorkers to be 0, got %d", wp.getActiveWorkers())
+	}
+}
+
+func TestExecuteUneasedStepInfinite(t *testing.T) {
+	var callCount atomic.Int64
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		callCount.Add(1)
+		time.Sleep(10 * time.Millisecond)
+		return nil
+	}, WithConcurrency(1))
+
+	_ = wp.Launch()
+	time.Sleep(50 * time.Millisecond)
+	wp.Stop()
+	wp.Wait()
+
+	if callCount.Load() == 0 {
+		t.Error("expected at least some calls to run in infinite step")
+	}
+}
