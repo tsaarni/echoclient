@@ -70,6 +70,27 @@ pool.Wait()
 
 This example creates a traffic profile that ramps up to 100 RPS over 5 seconds, maintains it for 10 seconds while scaling workers from 10 to 20, and then ramps down to zero over the final 5 seconds using an easing function for smooth transitions.
 
+**Worker Function Composition:**
+
+You can compose worker functions to build complex, realistic load behaviors:
+
+* **Traffic Mix**: Use `worker.Mix` to distribute workload actions probabilistically (e.g. 80% Reads, 20% Writes).
+* **Transient Error Recovery**: Use `.Retry` or `.RetryWithBackoff` methods on `WorkerFunc` to recover from transient failures.
+
+```go
+var readFunc worker.WorkerFunc = func(ctx context.Context, wp *worker.WorkerPool) error { /* ... */ }
+var writeFunc worker.WorkerFunc = func(ctx context.Context, wp *worker.WorkerPool) error { /* ... */ }
+
+// Mix readAction (80%) and writeAction (20%) using relative weights (4 and 1 sum to 5)
+composedWorker := worker.Mix(
+    readFunc.Weighted(4),
+    writeFunc.Retry(3, 100*time.Millisecond).Weighted(1),
+)
+
+pool := worker.NewWorkerPool(composedWorker, worker.WithConcurrency(50))
+pool.Launch()
+pool.Wait()
+```
 
 **Metrics-aware HTTP Client:**
 
