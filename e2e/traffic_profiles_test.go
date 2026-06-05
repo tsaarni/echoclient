@@ -125,7 +125,7 @@ func TestDynamicRuntimeAdjustments(t *testing.T) {
 		worker.WithDuration(0),
 	)
 
-	wp.Launch()
+	_ = wp.Launch()
 	defer wp.Stop()
 
 	time.Sleep(100 * time.Millisecond)

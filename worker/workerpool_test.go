@@ -33,7 +33,7 @@ func TestSetConcurrencyAfterWorkersTerminate(t *testing.T) {
 	}
 
 	wp := NewMultiStepWorkerPool(workerFunc, profile)
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 
 	// Should have completed 20 calls total (10 from each step).
@@ -141,7 +141,7 @@ func TestSetConcurrencyNegative(t *testing.T) {
 		WithConcurrency(5),
 	)
 
-	wp.Launch()
+	_ = wp.Launch()
 	time.Sleep(50 * time.Millisecond)
 
 	// Set negative concurrency should be ignored.
@@ -182,7 +182,7 @@ func TestWorkerStop(t *testing.T) {
 	wp := NewWorkerPool(workerFunc, WithConcurrency(1), WithDuration(100*time.Millisecond))
 
 	// Launch and wait.
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 
 	count := callCount.Load()
@@ -206,7 +206,7 @@ func TestWorkerStopConcurrent(t *testing.T) {
 	// 5 workers, limit to exactly 5 repetitions so no re-spawning beyond that.
 	wp := NewWorkerPool(workerFunc, WithConcurrency(5), WithRepetitions(5))
 
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 
 	count := callCount.Load()

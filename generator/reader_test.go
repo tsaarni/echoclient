@@ -92,8 +92,12 @@ func TestWithRandomSeed(t *testing.T) {
 	buf1 := make([]byte, 100)
 	buf2 := make([]byte, 100)
 
-	r1.Read(buf1)
-	r2.Read(buf2)
+	if _, err := r1.Read(buf1); err != nil {
+		t.Fatalf("r1 read failed: %v", err)
+	}
+	if _, err := r2.Read(buf2); err != nil {
+		t.Fatalf("r2 read failed: %v", err)
+	}
 
 	if !bytes.Equal(buf1, buf2) {
 		t.Error("readers with same seed should produce identical output")

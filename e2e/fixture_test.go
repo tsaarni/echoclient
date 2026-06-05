@@ -79,7 +79,7 @@ func RunPool(h *E2ETestFixture, opts ...worker.Option) {
 		},
 		opts...,
 	)
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 }
 
@@ -92,7 +92,7 @@ func RunMultiStepPool(h *E2ETestFixture, steps []*worker.Step) {
 		},
 		steps,
 	)
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 }
 

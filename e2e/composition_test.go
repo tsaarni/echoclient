@@ -36,7 +36,7 @@ func TestE2ECompositionMix(t *testing.T) {
 		req, _ := http.NewRequestWithContext(ctx, "GET", h.Server.URL+"/pathA", nil)
 		resp, err := h.Client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		return err
 	}
@@ -45,7 +45,7 @@ func TestE2ECompositionMix(t *testing.T) {
 		req, _ := http.NewRequestWithContext(ctx, "GET", h.Server.URL+"/pathB", nil)
 		resp, err := h.Client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		return err
 	}
@@ -106,7 +106,7 @@ func TestE2ECompositionRetry(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode >= 500 {
 			return http.ErrBodyNotAllowed // trigger retry
 		}

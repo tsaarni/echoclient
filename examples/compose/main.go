@@ -51,7 +51,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil
 	}
 
@@ -64,7 +64,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode >= 500 {
 			return fmt.Errorf("transient write error: HTTP %d", resp.StatusCode)

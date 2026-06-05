@@ -29,7 +29,7 @@ func TestContextCancellation(t *testing.T) {
 		cancel()
 	}()
 
-	wp.LaunchWithContext(ctx)
+	_ = wp.LaunchWithContext(ctx)
 	wp.Wait()
 
 	if duration := time.Since(start); duration < 200*time.Millisecond || duration > 500*time.Millisecond {
