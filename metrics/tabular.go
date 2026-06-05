@@ -16,14 +16,14 @@ const (
 func tabularDump(output io.Writer, rows []tableRow) {
 	w := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintf(w, "%s%s%sMetric\tLabels\tValue\t%s\n",
+	_, _ = fmt.Fprintf(w, "%s%s%sMetric\tLabels\tValue\t%s\n",
 		colorGreen, underline, "", colorReset)
 
 	for _, row := range rows {
-		fmt.Fprintf(w, "%s%s%s\t%s\t%v\t\n",
+		_, _ = fmt.Fprintf(w, "%s%s%s\t%s\t%v\t\n",
 			colorYellow, row.metric, colorReset,
 			row.labels, row.value)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 }

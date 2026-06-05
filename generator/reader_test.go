@@ -92,8 +92,12 @@ func TestWithRandomSeed(t *testing.T) {
 	buf1 := make([]byte, 100)
 	buf2 := make([]byte, 100)
 
-	r1.Read(buf1)
-	r2.Read(buf2)
+	if _, err := r1.Read(buf1); err != nil {
+		t.Fatalf("r1 read failed: %v", err)
+	}
+	if _, err := r2.Read(buf2); err != nil {
+		t.Fatalf("r2 read failed: %v", err)
+	}
 
 	if !bytes.Equal(buf1, buf2) {
 		t.Error("readers with same seed should produce identical output")
@@ -180,5 +184,29 @@ func TestSmallBufferReads(t *testing.T) {
 	// Should read only buffer size since it's smaller than chunk size.
 	if n != 10 {
 		t.Errorf("expected 10 bytes (buffer size), got %d", n)
+	}
+}
+
+func TestReaderRandomFallbackToASCII(t *testing.T) {
+	r := &Reader{
+		mode:          modeRandom,
+		sizeRemaining: 10,
+		chunkSize:     10,
+	}
+
+	buf := make([]byte, 10)
+	n, err := r.Read(buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 10 {
+		t.Fatalf("expected 10 bytes, got %d", n)
+	}
+
+	for i := 0; i < 10; i++ {
+		expected := byte(' ' + i)
+		if buf[i] != expected {
+			t.Errorf("byte %d is not expected ASCII %c: got %c", i, expected, buf[i])
+		}
 	}
 }

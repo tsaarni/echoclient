@@ -81,14 +81,14 @@ func runUpload(args []string) {
 			fmt.Printf("Upload failed: %v\n", err)
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode >= 300 {
 			body, _ := io.ReadAll(resp.Body)
 			fmt.Printf("Upload failed with status: %s, body: %s\n", resp.Status, string(body))
 			return fmt.Errorf("unexpected status: %s", resp.Status)
 		}
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
 

@@ -31,7 +31,7 @@ func main() {
 			return err
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil
 	}
 

@@ -107,7 +107,7 @@ func TestNoNegativeLatencyInBurst(t *testing.T) {
 	}
 
 	wp := worker.NewMultiStepWorkerPool(workerFunc, steps)
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 
 	mu.Lock()
@@ -139,7 +139,7 @@ func TestUnresponsiveRateChange(t *testing.T) {
 		worker.WithConcurrency(10),
 		worker.WithRepetitions(10),
 	)
-	wp.Launch()
+	_ = wp.Launch()
 
 	// Give them a moment to "grab" their slow timestamps and block.
 	time.Sleep(100 * time.Millisecond)
@@ -199,7 +199,7 @@ func TestScheduledTimeNeverExceedsNow(t *testing.T) {
 	}
 
 	wp := worker.NewMultiStepWorkerPool(workerFunc, steps)
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 
 	mu.Lock()
@@ -240,7 +240,7 @@ func TestEasingCurveAccuracy(t *testing.T) {
 	}
 
 	wp := worker.NewMultiStepWorkerPool(workerFunc, steps)
-	wp.Launch()
+	_ = wp.Launch()
 	wp.Wait()
 
 	mu.Lock()

@@ -330,13 +330,7 @@ func (wp *WorkerPool) executeUneasedStep(st *Step, ticker *time.Ticker) (int, in
 
 	if st.repetitions > 0 {
 		// Infinite duration but finite repetitions.
-		for {
-			// Check if repetitions satisfied and workers finished.
-			// TODO: use workgroup instead of polling?
-			if wp.remainingReps.Load() <= 0 && wp.activeWorkers.Load() == 0 {
-				break
-			}
-
+		for wp.remainingReps.Load() > 0 || wp.activeWorkers.Load() > 0 {
 			select {
 			case <-wp.ctx.Done():
 				return targetRate, targetConcurrency

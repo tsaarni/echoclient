@@ -24,7 +24,7 @@ func TestClientRoundTripSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("round trip failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -51,7 +51,7 @@ func TestClientRoundTripMethods(t *testing.T) {
 			if err != nil {
 				t.Fatalf("round trip failed: %v", err)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		})
 	}
 }
@@ -71,7 +71,7 @@ func TestClientRoundTripStatusCodes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("round trip failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != code {
 				t.Errorf("expected status %d, got %d", code, resp.StatusCode)
