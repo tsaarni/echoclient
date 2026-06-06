@@ -101,6 +101,7 @@ func skipMetric(name string) bool {
 
 	skipExact := []string{
 		"go_sched_gomaxprocs_threads", "process_max_fds", "go_info",
+		"process_network_receive_bytes_total", "process_network_transmit_bytes_total",
 	}
 	return slices.Contains(skipExact, name)
 }

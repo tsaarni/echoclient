@@ -119,7 +119,6 @@ The collected metrics include:
 - **Errors**: Total count and rate.
 - **Workers**: Active concurrent worker count.
 - **System**: User/system CPU usage and RSS memory usage.
-- **Network**: Bytes transmitted and received.
 - **Resources**: Open file descriptors, OS threads, and goroutines.
 
 ## Command-Line Tool
