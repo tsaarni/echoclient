@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/tsaarni/echoclient/client"
@@ -20,18 +19,12 @@ func main() {
 
 	// 1. Start a mock server representing our target application.
 	// /read: Always succeeds (HTTP 200)
-	// /write: Fails 2 times, then succeeds on the 3rd attempt (simulating transient write failures).
-	var writeAttempts atomic.Int64
+	// /write: Succeeds (HTTP 200)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/read":
 			w.WriteHeader(http.StatusOK)
 		case "/write":
-			attempt := writeAttempts.Add(1)
-			if attempt%3 != 0 {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
 			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -64,21 +57,14 @@ func main() {
 		if err != nil {
 			return err
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode >= 500 {
-			return fmt.Errorf("transient write error: HTTP %d", resp.StatusCode)
-		}
+		_ = resp.Body.Close()
 		return nil
 	}
 
-	// 3. Compose: 
-	// - wrap readAction with simple constant retries (2 attempts, 50ms delay)
-	// - wrap writeAction with exponential backoff and Full Jitter (3 attempts, 10-100ms)
-	// - mix readAction (80%) and writeAction (20%) using methods on WorkerFunc.
+	// 3. Compose: mix readAction (80%) and writeAction (20%) using methods on WorkerFunc.
 	composedWorker := worker.Mix(
-		readAction.Retry(2, 50*time.Millisecond).Weighted(80),
-		writeAction.RetryWithBackoff(3, 10*time.Millisecond, 100*time.Millisecond).Weighted(20),
+		readAction.Weighted(80),
+		writeAction.Weighted(20),
 	)
 
 	// 4. Periodically dump metrics to console

@@ -7,7 +7,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"sync"
-	"time"
 )
 
 // Weighted groups a function with its relative selection weight.
@@ -36,27 +35,6 @@ func configErrorFunc(err error) WorkerFunc {
 			}
 		})
 		return ErrStopWorker
-	}
-}
-
-// sleepCtx sleeps for duration d while respecting context cancellation.
-// Bypasses timer creation if d <= 0.
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			return nil
-		}
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
 	}
 }
 
@@ -104,103 +82,5 @@ func Mix(choices ...Weighted) WorkerFunc {
 			}
 		}
 		return nil
-	}
-}
-
-// Retry executes this WorkerFunc up to 'attempts' times.
-// It pauses for 'delay' between attempts, and respects context cancellation.
-func (f WorkerFunc) Retry(attempts int, delay time.Duration) WorkerFunc {
-	if f == nil {
-		return configErrorFunc(errors.New("worker: cannot retry nil WorkerFunc"))
-	}
-	if attempts <= 0 {
-		return configErrorFunc(errors.New("worker: retry attempts must be greater than zero"))
-	}
-	if delay < 0 {
-		return configErrorFunc(errors.New("worker: retry delay must be non-negative"))
-	}
-
-	return func(ctx context.Context, wp *WorkerPool) error {
-		var lastErr error
-		for i := 0; i < attempts; i++ {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-
-			err := f(ctx, wp)
-			if err == nil {
-				return nil
-			}
-			lastErr = err
-
-			if i < attempts-1 {
-				if err := sleepCtx(ctx, delay); err != nil {
-					return err
-				}
-			}
-		}
-		if lastErr != nil {
-			return lastErr
-		}
-		return errors.New("retry attempts exhausted with no execution")
-	}
-}
-
-// RetryWithBackoff executes this WorkerFunc up to 'attempts' times with exponential backoff and jitter.
-// The delay starts at 'minDelay', doubles on each failure, and is capped at 'maxDelay'.
-// A randomized jitter is applied so the actual delay is a random duration between 0 and the current backoff limit.
-// It respects context cancellation.
-func (f WorkerFunc) RetryWithBackoff(attempts int, minDelay, maxDelay time.Duration) WorkerFunc {
-	if f == nil {
-		return configErrorFunc(errors.New("worker: cannot retry nil WorkerFunc"))
-	}
-	if attempts <= 0 {
-		return configErrorFunc(errors.New("worker: retry attempts must be greater than zero"))
-	}
-	if minDelay < 0 {
-		return configErrorFunc(errors.New("worker: minDelay must be non-negative"))
-	}
-	if maxDelay < minDelay {
-		return configErrorFunc(errors.New("worker: maxDelay must be greater than or equal to minDelay"))
-	}
-
-	return func(ctx context.Context, wp *WorkerPool) error {
-		var lastErr error
-		currentLimit := minDelay
-
-		for i := 0; i < attempts; i++ {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-
-			err := f(ctx, wp)
-			if err == nil {
-				return nil
-			}
-			lastErr = err
-
-			if i < attempts-1 {
-				var jitteredDelay time.Duration
-				if currentLimit > 0 {
-					jitteredDelay = rand.N(currentLimit)
-				}
-
-				if err := sleepCtx(ctx, jitteredDelay); err != nil {
-					return err
-				}
-
-				// Double the limit for the next attempt, capped at maxDelay.
-				nextLimit := float64(currentLimit) * 2.0
-				if nextLimit >= float64(maxDelay) {
-					currentLimit = maxDelay
-				} else {
-					currentLimit = time.Duration(nextLimit)
-				}
-			}
-		}
-		if lastErr != nil {
-			return lastErr
-		}
-		return errors.New("retry attempts exhausted with no execution")
 	}
 }

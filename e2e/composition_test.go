@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/tsaarni/echoclient/metrics"
@@ -83,45 +82,4 @@ func TestE2ECompositionMix(t *testing.T) {
 	}
 }
 
-func TestE2ECompositionRetry(t *testing.T) {
-	var handlerAttempts atomic.Int64
 
-	// Server handler that fails 2 times, then succeeds on 3rd attempt
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		attempt := handlerAttempts.Add(1)
-		if attempt < 3 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}
-
-	h := NewE2ETestFixture(http.HandlerFunc(handler))
-	defer h.Close()
-
-	// Helper worker function that queries the server
-	var workerRequest worker.WorkerFunc = func(ctx context.Context, wp *worker.WorkerPool) error {
-		req, _ := http.NewRequestWithContext(ctx, "GET", h.Server.URL, nil)
-		resp, err := h.Client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode >= 500 {
-			return http.ErrBodyNotAllowed // trigger retry
-		}
-		return nil
-	}
-
-	// Wrap worker request in Retry using type method syntax
-	composed := workerRequest.Retry(5, 5*time.Millisecond)
-
-	wp := worker.NewWorkerPool(composed, worker.WithRepetitions(1), worker.WithConcurrency(1))
-	_ = wp.Launch()
-	wp.Wait()
-
-	// If the retry successfully recovered, the handler attempts should be exactly 3
-	if got := handlerAttempts.Load(); got != 3 {
-		t.Errorf("expected exactly 3 server attempts to recover, got %d", got)
-	}
-}
