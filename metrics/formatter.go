@@ -13,10 +13,20 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-type tableRow struct {
-	metric string
-	labels string
-	value  string
+// desiredPercentiles is the set of histogram percentiles reported by all formatters.
+var desiredPercentiles = []float64{0.5, 0.9, 0.95, 0.99}
+
+// metricEntry is the shared intermediate representation for a single metric data point.
+type metricEntry struct {
+	name   string
+	labels map[string]string
+	value  float64
+}
+
+// metricSnapshot holds all metrics collected during a single dump period.
+type metricSnapshot struct {
+	timestamp time.Time
+	entries   []metricEntry
 }
 
 // Previous metric values for rate calculation:
@@ -29,63 +39,87 @@ var prevMetricValues = map[string]map[string]float64{
 
 var prevMetricsDumpTime time.Time = time.Now()
 
-// DumpMetrics logs the current values of all registered metrics.
-func DumpMetrics(output io.Writer) {
+// gatherMetrics collects and returns a snapshot of all current metrics.
+func gatherMetrics() (*metricSnapshot, error) {
 	runtimeSeconds.Set(time.Since(startTime).Seconds())
 	currentTime.Set(float64(time.Now().Unix()))
 
 	metricFamilies, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
-		fmt.Printf("failed to gather metrics: %v\n", err)
-		return
+		return nil, err
 	}
-
 	synthetizeRateMetrics(&metricFamilies)
 
-	rows := buildMetricRows(metricFamilies)
-	if len(rows) == 0 {
-		fmt.Println("No Prometheus metrics to display.")
-		return
-	}
+	snap := &metricSnapshot{timestamp: time.Now()}
 
-	tabularDump(output, rows)
-}
-
-// buildMetricRows constructs table rows for metrics.
-func buildMetricRows(families []*dto.MetricFamily) []tableRow {
-	rows := make([]tableRow, 0)
-
-	for _, family := range families {
-		metricName := family.GetName()
-
-		if skipMetric(metricName) {
+	for _, family := range metricFamilies {
+		name := family.GetName()
+		if skipMetric(name) {
 			continue
 		}
-
 		for _, metric := range family.GetMetric() {
-			labels := formatLabels(metric.GetLabel())
-
+			labels := labelsToMap(metric.GetLabel())
 			switch family.GetType() {
 			case dto.MetricType_COUNTER:
-				val := metric.GetCounter().GetValue()
-				rows = append(rows, tableRow{metricName, labels, humanizeMetric(metricName, val)})
+				snap.entries = append(snap.entries, metricEntry{name, labels, metric.GetCounter().GetValue()})
 			case dto.MetricType_GAUGE:
-				val := metric.GetGauge().GetValue()
-				rows = append(rows, tableRow{metricName, labels, humanizeMetric(metricName, val)})
+				snap.entries = append(snap.entries, metricEntry{name, labels, metric.GetGauge().GetValue()})
 			case dto.MetricType_HISTOGRAM:
-				rows = append(rows, buildHistogramRow(metricName, labels, metric.GetHistogram()))
+				for _, p := range desiredPercentiles {
+					val := percentileFromHistogram(metric.GetHistogram(), p)
+					pName := fmt.Sprintf("%s_p%.0f", name, p*100)
+					snap.entries = append(snap.entries, metricEntry{pName, labels, val})
+				}
 			}
 		}
 	}
 
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].metric == rows[j].metric {
-			return rows[i].labels < rows[j].labels
+	sort.Slice(snap.entries, func(i, j int) bool {
+		if snap.entries[i].name == snap.entries[j].name {
+			return formatLabelsSorted(snap.entries[i].labels) < formatLabelsSorted(snap.entries[j].labels)
 		}
-		return rows[i].metric < rows[j].metric
+		return snap.entries[i].name < snap.entries[j].name
 	})
 
-	return rows
+	return snap, nil
+}
+
+// DumpMetrics logs the current values of all registered metrics in tabular format.
+func DumpMetrics(output io.Writer) {
+	snap, err := gatherMetrics()
+	if err != nil {
+		fmt.Printf("failed to gather metrics: %v\n", err)
+		return
+	}
+	if len(snap.entries) == 0 {
+		fmt.Println("No Prometheus metrics to display.")
+		return
+	}
+	tabularDump(output, snap)
+}
+
+// formatLabelsSorted formats a label map into a sorted display string.
+func formatLabelsSorted(labels map[string]string) string {
+	if len(labels) == 0 {
+		return "—"
+	}
+	parts := make([]string, 0, len(labels))
+	for k, v := range labels {
+		parts = append(parts, fmt.Sprintf("%s=\"%s\"", k, v))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ", ")
+}
+
+func labelsToMap(pairs []*dto.LabelPair) map[string]string {
+	if len(pairs) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		m[p.GetName()] = p.GetValue()
+	}
+	return m
 }
 
 // skipMetric returns true if the given metric name should be skipped.
@@ -104,19 +138,6 @@ func skipMetric(name string) bool {
 		"process_network_receive_bytes_total", "process_network_transmit_bytes_total",
 	}
 	return slices.Contains(skipExact, name)
-}
-
-// buildHistogramRow builds a table row for selected percentiles.
-func buildHistogramRow(name, labels string, histogram *dto.Histogram) tableRow {
-	desiredPercentiles := []float64{0.5, 0.9, 0.95, 0.99}
-	parts := []string{}
-	for _, p := range desiredPercentiles {
-		upper := percentileFromHistogram(histogram, p)
-		// Example: p90=123ms
-		percentileLabel := fmt.Sprintf("p%.0f=%s", p*100, humanizeMetric(name, upper))
-		parts = append(parts, percentileLabel)
-	}
-	return tableRow{name, labels, strings.Join(parts, ", ")}
 }
 
 // percentileFromHistogram returns the upper bound value for the given percentile.
@@ -140,34 +161,22 @@ func percentileFromHistogram(histogram *dto.Histogram, percentile float64) float
 	return histogram.Bucket[len(histogram.Bucket)-1].GetUpperBound()
 }
 
-// formatLabels formats label pairs into single string.
-func formatLabels(pairs []*dto.LabelPair) string {
-	if len(pairs) == 0 {
-		return "—"
-	}
-
-	labels := make([]string, 0, len(pairs))
-	for _, pair := range pairs {
-		labels = append(labels, fmt.Sprintf("%s=\"%s\"", pair.GetName(), pair.GetValue()))
-	}
-	sort.Strings(labels)
-	return strings.Join(labels, ", ")
-}
-
 // humanizeMetric returns a human-readable string for metrics.
 func humanizeMetric(name string, val float64) string {
-	switch name {
-	case "process_network_receive_bytes_total", "process_network_transmit_bytes_total", "process_resident_memory_bytes", "process_virtual_memory_bytes", "process_virtual_memory_max_bytes":
+	switch {
+	case name == "process_resident_memory_bytes":
 		return humanize.Bytes(uint64(val))
-	case "process_start_time_seconds", "current_time":
-		t := time.Unix(int64(val), 0)
-		return t.Format("2006-01-02 15:04:05 MST")
-	case "process_max_fds", "process_open_fds", "go_goroutines", "go_threads", "worker_pool_active_workers":
+	case name == "process_start_time_seconds" || name == "current_time":
+		return time.Unix(int64(val), 0).Format("2006-01-02 15:04:05 MST")
+	case name == "process_open_fds" || name == "go_goroutines" || name == "go_threads" || name == "worker_pool_active_workers":
 		return humanize.Comma(int64(val))
-	case "runtime_seconds", "http_client_request_duration_seconds", "scheduler_request_latency_seconds", "process_cpu_seconds_total":
-		d := time.Duration(val * float64(time.Second)).Round(time.Millisecond)
-		return d.String()
-	case "http_client_requests_total", "http_client_errors_total", "http_client_requests_per_second", "http_client_errors_per_second", "scheduler_skipped_requests_total":
+	case strings.HasPrefix(name, "http_client_request_duration_seconds") ||
+		strings.HasPrefix(name, "scheduler_request_latency_seconds") ||
+		name == "runtime_seconds" || name == "process_cpu_seconds_total":
+		return time.Duration(val * float64(time.Second)).Round(time.Millisecond).String()
+	case name == "http_client_requests_total" || name == "http_client_errors_total" ||
+		name == "http_client_requests_per_second" || name == "http_client_errors_per_second" ||
+		name == "scheduler_skipped_requests_total":
 		return humanize.Comma(int64(val))
 	default:
 		return fmt.Sprintf("%v", val)
@@ -215,7 +224,7 @@ func buildRateMetricFamily(fromFamily *dto.MetricFamily, fromName, rateName stri
 		Type: dto.MetricType_GAUGE.Enum(),
 	}
 	for _, metric := range fromFamily.GetMetric() {
-		labels := formatLabels(metric.GetLabel())
+		labels := formatLabelsSorted(labelsToMap(metric.GetLabel()))
 		val := metric.GetCounter().GetValue()
 		prevVal := prevMetricValues[fromName][labels]
 		rate := (val - prevVal) / elapsed
