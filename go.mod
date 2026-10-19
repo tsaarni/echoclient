@@ -3,7 +3,7 @@ module github.com/tsaarni/echoclient
 go 1.27
 
 require (
-	github.com/dustin/go-humanize v1.0.1
+	github.com/dustin/go-humanize v1.1.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	golang.org/x/sys v0.47.0
