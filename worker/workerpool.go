@@ -47,6 +47,9 @@ type WorkerPool struct {
 	cancel            context.CancelFunc
 
 	rpsAtom atomic.Int64 // Current RPS; 0 means unlimited (read by RequestScheduler.Take)
+
+	onWorkerStart WorkerStartFunc // Protected by workerMu.
+	onWorkerExit  WorkerExitFunc  // Protected by workerMu.
 }
 
 // NewWorkerPool creates a new worker pool.
@@ -167,6 +170,23 @@ func (wp *WorkerPool) GetWorker() WorkerFunc {
 	return wp.worker
 }
 
+// SetWorkerHooks sets callbacks that run when each worker starts and exits.
+// Call it before Launch. Either callback may be nil.
+func (wp *WorkerPool) SetWorkerHooks(onStart WorkerStartFunc, onExit WorkerExitFunc) {
+	wp.workerMu.Lock()
+	wp.onWorkerStart = onStart
+	wp.onWorkerExit = onExit
+	wp.workerMu.Unlock()
+}
+
+// countError counts err in worker_errors_total.
+// Errors caused by stopping the pool are not counted.
+func (wp *WorkerPool) countError(err error) {
+	if err != nil && (wp.ctx.Err() == nil || !errors.Is(err, context.Canceled)) {
+		metrics.WorkerErrorsTotal.Inc()
+	}
+}
+
 // runWorker executes the worker loop.
 func (wp *WorkerPool) runWorker() {
 	defer wp.wg.Done()
@@ -179,6 +199,25 @@ func (wp *WorkerPool) runWorker() {
 			metrics.WorkerPoolActiveWorkers.Dec()
 		}
 	}()
+
+	wp.workerMu.RLock()
+	onStart, onExit := wp.onWorkerStart, wp.onWorkerExit
+	wp.workerMu.RUnlock()
+
+	ctx := wp.ctx
+	if onStart != nil {
+		startCtx, err := onStart(ctx, wp)
+		if err != nil {
+			wp.countError(err)
+			return
+		}
+		if startCtx != nil {
+			ctx = startCtx
+		}
+	}
+	if onExit != nil {
+		defer onExit(ctx, wp)
+	}
 
 	for {
 		// Check for cancellation.
@@ -201,7 +240,7 @@ func (wp *WorkerPool) runWorker() {
 		// Take() handles both pacing and context enrichment.
 		// When rate-limited, it blocks until the scheduled time and returns a context
 		// with the scheduled time embedded. When unlimited, it returns ctx unchanged.
-		workerCtx, err := wp.scheduler.Take(wp.ctx, &wp.rpsAtom)
+		workerCtx, err := wp.scheduler.Take(ctx, &wp.rpsAtom)
 		if err != nil {
 			return // Context cancelled.
 		}
@@ -218,10 +257,7 @@ func (wp *WorkerPool) runWorker() {
 			return
 		}
 
-		// Errors caused by stopping the pool are not counted.
-		if err != nil && (wp.ctx.Err() == nil || !errors.Is(err, context.Canceled)) {
-			metrics.WorkerErrorsTotal.Inc()
-		}
+		wp.countError(err)
 	}
 }
 

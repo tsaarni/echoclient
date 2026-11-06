@@ -40,8 +40,17 @@ var (
 // Returned errors are counted in the worker_errors_total metric.
 type WorkerFunc func(ctx context.Context, wp *WorkerPool) error
 
-// LifeCycleFunc defines a function signature for lifecycle hooks.
-type LifeCycleFunc func(ctx context.Context, wp *WorkerPool)
+// StepHookFunc is called when a step starts or ends.
+type StepHookFunc func(ctx context.Context, wp *WorkerPool)
+
+// WorkerStartFunc is called when a worker starts.
+// The returned context is passed to every call of the worker function by this worker.
+// It must be derived from ctx. If an error is returned, the worker exits.
+type WorkerStartFunc func(ctx context.Context, wp *WorkerPool) (context.Context, error)
+
+// WorkerExitFunc is called when a worker exits, if WorkerStartFunc succeeded.
+// It receives the context returned by WorkerStartFunc. The context may be canceled.
+type WorkerExitFunc func(ctx context.Context, wp *WorkerPool)
 
 // Option configures a Step.
 type Option func(*Step)
@@ -145,7 +154,7 @@ func WithWorkerFunc(f WorkerFunc) Option {
 }
 
 // WithHooks sets optional callbacks to run at the start and end of a step.
-func WithHooks(onStart, onEnd LifeCycleFunc) Option {
+func WithHooks(onStart, onEnd StepHookFunc) Option {
 	return func(c *Step) {
 		c.onStart = onStart
 		c.onEnd = onEnd
@@ -162,8 +171,8 @@ type Step struct {
 	duration          time.Duration
 	repetitions       int
 	workerFunc        WorkerFunc
-	onStart           LifeCycleFunc
-	onEnd             LifeCycleFunc
+	onStart           StepHookFunc
+	onEnd             StepHookFunc
 	pause             bool
 }
 

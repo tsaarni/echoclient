@@ -85,6 +85,35 @@ pool.Launch()
 pool.Wait()
 ```
 
+### Worker State
+
+Opens a resource once per worker, such as a connection, and closes it when the worker exits.
+
+```go
+type connKey struct{}
+
+pool := worker.NewWorkerPool(func(ctx context.Context, wp *worker.WorkerPool) error {
+    conn := ctx.Value(connKey{}).(net.Conn)
+    // Use conn...
+    return nil
+}, worker.WithConcurrency(10), worker.WithDuration(10*time.Second))
+
+pool.SetWorkerHooks(
+    func(ctx context.Context, wp *worker.WorkerPool) (context.Context, error) {
+        conn, err := net.Dial("tcp", "localhost:9000")
+        if err != nil {
+            return ctx, err
+        }
+        return context.WithValue(ctx, connKey{}, conn), nil
+    },
+    func(ctx context.Context, wp *worker.WorkerPool) {
+        _ = ctx.Value(connKey{}).(net.Conn).Close()
+    },
+)
+pool.Launch()
+pool.Wait()
+```
+
 ### Test Data Generator
 
 Streams random data of a specific size without loading all of it into memory.

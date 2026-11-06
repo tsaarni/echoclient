@@ -56,9 +56,9 @@ func main() {
 		return nil
 	}
 
-	// Helper for hooks to match LifeCycleFunc signature.
+	// Helper for hooks to match StepHookFunc signature.
 	// It prints a separator with the given message.
-	hook := func(msg string) worker.LifeCycleFunc {
+	hook := func(msg string) worker.StepHookFunc {
 		return func(ctx context.Context, wp *worker.WorkerPool) {
 			printSeparator(msg)
 		}

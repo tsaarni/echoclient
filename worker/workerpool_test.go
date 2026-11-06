@@ -344,3 +344,95 @@ func TestWorkerErrorsNotCountedOnStop(t *testing.T) {
 		t.Errorf("expected 0 errors, got %v", got)
 	}
 }
+
+type testStateKey struct{}
+
+func TestWorkerHooks(t *testing.T) {
+	var starts, exits, calls, missing atomic.Int64
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		calls.Add(1)
+		if _, ok := ctx.Value(testStateKey{}).(int64); !ok {
+			missing.Add(1)
+		}
+		time.Sleep(time.Millisecond)
+		return nil
+	}, WithConcurrency(3))
+	wp.SetWorkerHooks(
+		func(ctx context.Context, wp *WorkerPool) (context.Context, error) {
+			return context.WithValue(ctx, testStateKey{}, starts.Add(1)), nil
+		},
+		func(ctx context.Context, wp *WorkerPool) {
+			if _, ok := ctx.Value(testStateKey{}).(int64); ok {
+				exits.Add(1)
+			}
+		},
+	)
+	_ = wp.Launch()
+	time.Sleep(50 * time.Millisecond)
+	wp.Stop()
+	wp.Wait()
+
+	if starts.Load() != 3 || exits.Load() != 3 {
+		t.Errorf("expected 3 starts and 3 exits, got %d and %d", starts.Load(), exits.Load())
+	}
+	if calls.Load() == 0 || missing.Load() != 0 {
+		t.Errorf("expected all %d calls to see worker state, %d did not", calls.Load(), missing.Load())
+	}
+}
+
+func TestWorkerHooksScaleDown(t *testing.T) {
+	var starts, exits atomic.Int64
+	wp := NewMultiStepWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		time.Sleep(time.Millisecond)
+		return nil
+	}, []*Step{
+		NewStep(WithConcurrency(5), WithDuration(200*time.Millisecond)),
+		NewStep(WithConcurrency(1), WithDuration(400*time.Millisecond)),
+	})
+	wp.SetWorkerHooks(
+		func(ctx context.Context, wp *WorkerPool) (context.Context, error) {
+			starts.Add(1)
+			return ctx, nil
+		},
+		func(ctx context.Context, wp *WorkerPool) {
+			exits.Add(1)
+		},
+	)
+	_ = wp.Launch()
+	time.Sleep(400 * time.Millisecond) // Step 2 starts within 100ms after 200ms.
+	if got := exits.Load(); got != 4 {
+		t.Errorf("expected 4 exits after scale down, got %d", got)
+	}
+	wp.Wait()
+
+	if starts.Load() != 5 || exits.Load() != 5 {
+		t.Errorf("expected 5 starts and 5 exits, got %d and %d", starts.Load(), exits.Load())
+	}
+}
+
+func TestWorkerHooksStartError(t *testing.T) {
+	before := testutil.ToFloat64(metrics.WorkerErrorsTotal)
+
+	var calls, exits atomic.Int64
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		calls.Add(1)
+		return nil
+	}, WithConcurrency(2), WithDuration(250*time.Millisecond))
+	wp.SetWorkerHooks(
+		func(ctx context.Context, wp *WorkerPool) (context.Context, error) {
+			return ctx, errors.New("connect failed")
+		},
+		func(ctx context.Context, wp *WorkerPool) {
+			exits.Add(1)
+		},
+	)
+	_ = wp.Launch()
+	wp.Wait()
+
+	if calls.Load() != 0 || exits.Load() != 0 {
+		t.Errorf("expected no calls and no exits, got %d and %d", calls.Load(), exits.Load())
+	}
+	if got := testutil.ToFloat64(metrics.WorkerErrorsTotal) - before; got < 2 {
+		t.Errorf("expected at least 2 errors, got %v", got)
+	}
+}
