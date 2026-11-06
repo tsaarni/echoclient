@@ -210,7 +210,7 @@ func TestRequestSchedulerMaxCatchupClamps(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Establish TAT with one Take.
+	// Establish the send time with one Take.
 	_, err := rl.Take(ctx, &rps)
 	if err != nil {
 		t.Fatalf("Take failed: %v", err)
@@ -234,9 +234,9 @@ func TestRequestSchedulerMaxCatchupClamps(t *testing.T) {
 func TestRequestSchedulerContextCancellation(t *testing.T) {
 	rl := NewRequestScheduler()
 	var rps atomic.Int64
-	rps.Store(1) // 1 RPS = 1 second interval, so next TAT is far ahead.
+	rps.Store(1) // 1 RPS = 1 second interval, so the next send time is far ahead.
 
-	// Take once to advance TAT.
+	// Take once to reserve a send time.
 	_, _ = rl.Take(context.Background(), &rps)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -280,9 +280,7 @@ func TestRequestSchedulerReset(t *testing.T) {
 }
 
 // TestRequestSchedulerFirstRequestNotDelayed verifies that the first Take()
-// after a Reset fires immediately even at very low RPS. Previously, the JIT
-// check gated on newTAT (= oldTAT + interval), which prevented the CAS when
-// interval > jitLookahead, delaying the first request by nearly one full interval.
+// after a Reset fires immediately even at very low RPS.
 func TestRequestSchedulerFirstRequestNotDelayed(t *testing.T) {
 	rl := NewRequestScheduler()
 	var rps atomic.Int64
@@ -309,26 +307,23 @@ func TestRequestSchedulerFirstRequestNotDelayed(t *testing.T) {
 	}
 }
 
-// TestRequestSchedulerSnapBackwardOnRPSIncrease verifies that when RPS increases
-// (e.g., during easing ramp-up), a stale TAT committed at the old lower RPS is
-// snapped backward to now. Without this, workers would JIT-wait for the stale
-// TAT instead of pacing at the new higher rate.
-func TestRequestSchedulerSnapBackwardOnRPSIncrease(t *testing.T) {
+// TestRequestSchedulerRateIncreaseAppliesToNextRequest verifies that when RPS increases
+// (e.g., during easing ramp-up), the next request uses the new interval instead of
+// waiting for a send time computed at the old, lower RPS.
+func TestRequestSchedulerRateIncreaseAppliesToNextRequest(t *testing.T) {
 	rl := NewRequestScheduler()
 	var rps atomic.Int64
 	rps.Store(1) // Start at 1 RPS → 1s interval
 
 	ctx := context.Background()
 
-	// First Take commits TAT to now + 1s.
+	// First Take reserves now.
 	_, err := rl.Take(ctx, &rps)
 	if err != nil {
 		t.Fatalf("Take failed: %v", err)
 	}
 
-	// Increase RPS to 1000. The committed TAT (now + ~1s) is far too
-	// far ahead for the new 1ms interval. The snap-backward mechanism
-	// should reset TAT to now.
+	// Increase RPS to 1000. The next send time is 1ms after the first one.
 	rps.Store(1000)
 
 	start := time.Now()
@@ -338,10 +333,45 @@ func TestRequestSchedulerSnapBackwardOnRPSIncrease(t *testing.T) {
 		t.Fatalf("Take failed: %v", err)
 	}
 
-	// Without snap-backward, the second Take would JIT-wait ~900ms for
-	// the stale TAT. With it, Take returns almost immediately.
 	if elapsed > 200*time.Millisecond {
-		t.Errorf("second Take() after RPS increase took %v, expected < 200ms (stale TAT should be snapped)", elapsed)
+		t.Errorf("second Take() after RPS increase took %v, expected < 200ms", elapsed)
+	}
+}
+
+// TestRequestSchedulerRateIncreaseDoesNotReuseSendTimes verifies that send times
+// reserved before an RPS increase are not given out again.
+func TestRequestSchedulerRateIncreaseDoesNotReuseSendTimes(t *testing.T) {
+	rl := NewRequestScheduler()
+	var rps atomic.Int64
+	rps.Store(20) // 50ms interval
+
+	ctx := context.Background()
+	take := func() time.Time {
+		retCtx, err := rl.Take(ctx, &rps)
+		if err != nil {
+			t.Errorf("Take failed: %v", err)
+		}
+		return ScheduledTimeFromContext(retCtx)
+	}
+
+	// Three workers reserve now, now+50ms and now+100ms, and sleep until then.
+	reserved := make(chan time.Time, 3)
+	for range 3 {
+		go func() { reserved <- take() }()
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	// After the increase, new send times must come after the reserved ones.
+	rps.Store(1000)
+	first := take()
+	var last time.Time
+	for range 3 {
+		if st := <-reserved; st.After(last) {
+			last = st
+		}
+	}
+	if !first.After(last) {
+		t.Errorf("send time after RPS increase is %v before a reserved send time", last.Sub(first))
 	}
 }
 

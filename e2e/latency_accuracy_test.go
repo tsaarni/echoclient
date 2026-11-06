@@ -60,7 +60,7 @@ func TestLatencyCompensationGranularity(t *testing.T) {
 
 // TestNoNegativeLatencyInBurst verifies that scheduled times never exceed
 // execution time across a step transition from high RPS to low RPS.
-// The GCRA scheduler resets TAT at step boundaries and JIT-paces workers,
+// The scheduler resets the next send time at step boundaries and JIT-paces workers,
 // so negative latency (scheduledTime > now) should never occur.
 func TestNoNegativeLatencyInBurst(t *testing.T) {
 	h := NewE2ETestFixture(Status(200))
@@ -96,7 +96,7 @@ func TestNoNegativeLatencyInBurst(t *testing.T) {
 			worker.WithConcurrency(10),
 		),
 		// Step 2: Drop to a lower rate.
-		// With the GCRA scheduler, TAT resets at step boundaries so
+		// The scheduler resets the next send time at step boundaries so
 		// workers are paced at the new rate via JIT — no token
 		// accumulation from Step 1.
 		worker.NewStep(
@@ -207,19 +207,20 @@ func TestScheduledTimeNeverExceedsNow(t *testing.T) {
 	}
 }
 
-// TestEasingCurveAccuracy verifies that during a linear ramp from 10→200 RPS over 2s,
-// the actual request rate in each time bucket approximates the eased rate.
+// TestEasingCurveAccuracy verifies that during a linear ramp from 1→200 RPS over 2s,
+// the scheduled request rate increases and never exceeds the eased rate.
 func TestEasingCurveAccuracy(t *testing.T) {
 	h := NewE2ETestFixture(Status(200))
 	defer h.Close()
 
 	var mu sync.Mutex
-	var completionTimes []time.Time
+	var scheduledTimes []time.Time
 	var startTime time.Time
 
+	// Scheduled send times do not depend on how fast the test machine runs the workers.
 	workerFunc := func(ctx context.Context, wp *worker.WorkerPool) error {
 		mu.Lock()
-		completionTimes = append(completionTimes, time.Now())
+		scheduledTimes = append(scheduledTimes, worker.ScheduledTimeFromContext(ctx))
 		mu.Unlock()
 		_, _ = h.Client.Get(h.Server.URL)
 		return nil
@@ -245,8 +246,8 @@ func TestEasingCurveAccuracy(t *testing.T) {
 
 	// Bin into 500ms buckets.
 	buckets := make([]int, 4) // 0-500ms, 500-1000ms, 1000-1500ms, 1500-2000ms
-	for _, ct := range completionTimes {
-		elapsed := ct.Sub(startTime)
+	for _, st := range scheduledTimes {
+		elapsed := st.Sub(startTime)
 		idx := int(elapsed / (500 * time.Millisecond))
 		if idx >= len(buckets) {
 			idx = len(buckets) - 1
@@ -255,19 +256,16 @@ func TestEasingCurveAccuracy(t *testing.T) {
 			buckets[idx]++
 		}
 	}
-
-	// With linear easing from 10→200 RPS over 2s, the instantaneous rate at time t is:
-	// rate(t) = 10 + (200-10) * (t/2s) = 10 + 95*t
-	// Expected counts per 500ms bucket (integral of rate over bucket):
-	// Bucket 0 (0-0.5s): integral of 10+95t from 0 to 0.5 ≈ 16.9
-	// Bucket 1 (0.5-1.0s): ≈ 41.3
-	// Bucket 2 (1.0-1.5s): ≈ 65.6
-	// Bucket 3 (1.5-2.0s): ≈ 90.0
 	t.Logf("Buckets: %v", buckets)
 
-	// Verify monotonically increasing request count across buckets.
-	for i := 1; i < len(buckets); i++ {
-		if buckets[i] <= buckets[i-1] {
+	// Expected counts from the eased rate, which is updated every 100ms. A slow machine
+	// can only lower the scheduled rate, so only the upper bound is tight.
+	expected := []int{9, 30, 56, 82}
+	for i := range buckets {
+		if buckets[i] > expected[i]+4 {
+			t.Errorf("bucket[%d]=%d exceeds the eased rate (expected about %d)", i, buckets[i], expected[i])
+		}
+		if i > 0 && buckets[i] <= buckets[i-1] {
 			t.Errorf("expected monotonically increasing request count; bucket[%d]=%d <= bucket[%d]=%d",
 				i, buckets[i], i-1, buckets[i-1])
 		}
