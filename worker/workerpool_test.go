@@ -98,6 +98,9 @@ func TestCalculateEasedValue(t *testing.T) {
 		{"MinValueClamp", 100, 1, 0.0, EasingLinear, 100},
 		{"MinValueClampPositiveTarget", 0, 10, 0.05, EasingLinear, 1}, // Result would be 0.5, clamped to 1.
 		{"NegativeToPositive", -10, 10, 0.5, EasingLinear, 1},         // Result would be 0, but clamped to 1 since target > 0.
+		{"RampDownToZero", 100, 0, 0.995, EasingLinear, 1},            // Result would be 0, clamped to 1.
+		{"RampDownToZeroEnd", 100, 0, 1, EasingOut, 1},                // Clamped to 1.
+		{"UnlimitedToUnlimited", 0, 0, 0.5, EasingLinear, 0},
 
 		// Curve Verification (Start=0, Target=1000 allows verifying 3 decimal places).
 		// Linear
@@ -128,6 +131,25 @@ func TestCalculateEasedValue(t *testing.T) {
 					tt.start, tt.target, tt.progress, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRampDownToZeroStaysRateLimited(t *testing.T) {
+	// Easing RPS to 0 keeps the rate limit until the end of the step.
+	var calls atomic.Int64
+	wp := NewMultiStepWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		calls.Add(1)
+		return nil
+	}, []*Step{
+		NewStep(WithDuration(500*time.Millisecond), WithRateLimit(100, 100)),
+		NewStep(WithDuration(time.Second), WithRateLimit(0, 0, EasingOut)),
+	})
+	_ = wp.Launch()
+	wp.Wait()
+
+	// Expected ~50 (step 1) + ~33 (step 2).
+	if got := calls.Load(); got > 200 {
+		t.Errorf("expected rate-limited calls (~83), got %d", got)
 	}
 }
 

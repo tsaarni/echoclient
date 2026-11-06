@@ -352,6 +352,10 @@ func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate,
 	targetConcurrency := st.concurrency
 	startTime := time.Now()
 
+	// Final values of the step. Easing to rps 0 ends at 1 rps.
+	finalRate := calculateEasedValue(startRate, targetRate, 1, st.rpsEasing)
+	finalConcurrency := calculateEasedValue(startConcurrency, targetConcurrency, 1, st.concurrencyEasing)
+
 	for {
 		now := time.Now()
 		elapsed := now.Sub(startTime)
@@ -359,14 +363,14 @@ func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate,
 		// Check if repetitions satisfied and workers finished.
 		// TODO: use workgroup instead of polling?
 		if st.repetitions > 0 && wp.remainingReps.Load() <= 0 && wp.activeWorkers.Load() == 0 {
-			return targetRate, targetConcurrency
+			return finalRate, finalConcurrency
 		}
 
 		if elapsed >= st.duration {
 			// Duration ended: ensure we hit the exact target at the end.
-			wp.SetRateLimit(targetRate, targetBurst)
-			wp.SetConcurrency(targetConcurrency)
-			return targetRate, targetConcurrency
+			wp.SetRateLimit(finalRate, targetBurst)
+			wp.SetConcurrency(finalConcurrency)
+			return finalRate, finalConcurrency
 		}
 
 		progress := float64(elapsed) / float64(st.duration)
@@ -393,8 +397,9 @@ func calculateEasedValue(start, target int, progress float64, easingFunc func(fl
 	}
 	easedProgress := easingFunc(progress)
 	value := int(float64(start) + easedProgress*float64(target-start))
-	// Ensure minimum of 1 if target is positive.
-	if value < 1 && target > 0 {
+	// Keep the value at 1 or more while easing from or to a positive value.
+	// Zero means unlimited RPS.
+	if value < 1 && (target > 0 || start > 0) {
 		return 1
 	}
 	return value
