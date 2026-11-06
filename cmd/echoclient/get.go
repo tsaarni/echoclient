@@ -35,7 +35,7 @@ func runGet(args []string) {
 
 	if *rampUpPeriod > 0 && *rps == 0 {
 		fmt.Println("Ramp-up period specified without a target RPS. Ignoring ramp-up.")
-		os.Exit(1)
+		*rampUpPeriod = 0
 	}
 
 	reps := "infinite"

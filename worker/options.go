@@ -46,7 +46,7 @@ type LifeCycleFunc func(ctx context.Context, wp *WorkerPool)
 type Option func(*Step)
 
 // WithConcurrency sets the number of concurrent workers, with optional easing.
-// If not set, defaults to 0.
+// If not set, defaults to 1.
 //
 // When easing is provided, concurrency interpolates from the previous value
 // to the new value over the step's duration.

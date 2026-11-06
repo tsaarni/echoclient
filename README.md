@@ -68,7 +68,7 @@ pool.Wait()
 
 ### Worker Composition
 
-Composes multiple tasks with relative weights (e.g. 80% reads, 20% writes) and retry behaviors.
+Composes multiple tasks with relative weights (e.g. 80% reads, 20% writes).
 
 ```go
 var readFunc worker.WorkerFunc = func(ctx context.Context, wp *worker.WorkerPool) error { /* ... */ }
@@ -77,7 +77,7 @@ var writeFunc worker.WorkerFunc = func(ctx context.Context, wp *worker.WorkerPoo
 // Mix read (weight 4) and write (weight 1)
 composedWorker := worker.Mix(
     readFunc.Weighted(4),
-    writeFunc.Retry(3, 100*time.Millisecond).Weighted(1),
+    writeFunc.Weighted(1),
 )
 
 pool := worker.NewWorkerPool(composedWorker, worker.WithConcurrency(50))
