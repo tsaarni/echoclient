@@ -163,8 +163,12 @@ resp, err := httpClient.Get("http://localhost:8080")
 // Print snapshot to standard out
 metrics.DumpMetrics(os.Stdout)
 
-// Or expose to Prometheus
-go metrics.StartPrometheusServer(":9090")
+// Or expose to Prometheus at http://localhost:9090/metrics
+srv, err := metrics.StartPrometheusServer("localhost:9090")
+if err != nil {
+    log.Fatal(err)
+}
+defer srv.Close()
 ```
 
 The collected metrics include:

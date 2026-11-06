@@ -2,7 +2,7 @@
 package metrics
 
 import (
-	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -104,12 +104,17 @@ var (
 	)
 )
 
-// StartPrometheusServer starts an HTTP server exposing Prometheus metrics at /metrics.
-// Call will block, so it should be run in a separate goroutine.
-func StartPrometheusServer(addr string) {
-	http.Handle("/metrics", promhttp.Handler())
-	fmt.Printf("Starting Prometheus metrics server at %s/metrics\n", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		fmt.Printf("Prometheus metrics server failed: %v\n", err)
+// StartPrometheusServer serves metrics at http://addr/metrics in the background.
+// It returns after the listener is open. Close the returned server to stop it.
+// The endpoint has no authentication, so bind addr to localhost unless remote access is needed.
+func StartPrometheusServer(addr string) (*http.Server, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
 	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = srv.Serve(ln) }() // Errors after the listener is open are not reported.
+	return srv, nil
 }
