@@ -40,14 +40,12 @@ var prevMetricValues = map[string]map[string]float64{
 var prevMetricsDumpTime time.Time = time.Now()
 
 // gatherMetrics collects and returns a snapshot of all current metrics.
+// If some metrics fail, it returns the others together with the error.
 func gatherMetrics() (*metricSnapshot, error) {
 	runtimeSeconds.Set(time.Since(startTime).Seconds())
 	currentTime.Set(float64(time.Now().Unix()))
 
 	metricFamilies, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		return nil, err
-	}
 	synthetizeRateMetrics(&metricFamilies)
 
 	snap := &metricSnapshot{timestamp: time.Now()}
@@ -81,21 +79,21 @@ func gatherMetrics() (*metricSnapshot, error) {
 		return snap.entries[i].name < snap.entries[j].name
 	})
 
-	return snap, nil
+	return snap, err
 }
 
 // DumpMetrics logs the current values of all registered metrics in tabular format.
+// Colors are used only when output is a terminal.
 func DumpMetrics(output io.Writer) {
 	snap, err := gatherMetrics()
-	if err != nil {
-		fmt.Printf("failed to gather metrics: %v\n", err)
-		return
-	}
 	if len(snap.entries) == 0 {
-		fmt.Println("No Prometheus metrics to display.")
-		return
+		_, _ = fmt.Fprintln(output, "No Prometheus metrics to display.")
+	} else {
+		tabularDump(output, snap)
 	}
-	tabularDump(output, snap)
+	if err != nil {
+		_, _ = fmt.Fprintf(output, "Failed to gather some metrics: %v\n", err)
+	}
 }
 
 // formatLabelsSorted formats a label map into a sorted display string.

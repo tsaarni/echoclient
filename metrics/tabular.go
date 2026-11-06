@@ -16,22 +16,28 @@ const (
 	underline   = "\033[4m"
 )
 
-var colorsEnabled = func() bool {
+// colorsEnabled reports whether output is a terminal and colors are not disabled.
+func colorsEnabled(output io.Writer) bool {
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return false
 	}
-	_, err := unix.IoctlGetTermios(int(os.Stdout.Fd()), unix.TCGETS)
-	return err == nil
-}()
-
-func color(code string) string {
-	if colorsEnabled {
-		return code
+	f, ok := output.(*os.File)
+	if !ok {
+		return false
 	}
-	return ""
+	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
+	return err == nil
 }
 
 func tabularDump(output io.Writer, snap *metricSnapshot) {
+	useColors := colorsEnabled(output)
+	color := func(code string) string {
+		if useColors {
+			return code
+		}
+		return ""
+	}
+
 	w := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 
 	_, _ = fmt.Fprintf(w, "%s%sMetric\tLabels\tValue\t%s\n",

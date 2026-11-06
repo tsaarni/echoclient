@@ -2,9 +2,13 @@ package metrics
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -130,5 +134,41 @@ func TestTabularDump(t *testing.T) {
 	out := buf.String()
 	if !bytes.Contains(buf.Bytes(), []byte("metric_a")) {
 		t.Errorf("expected output to contain metric_a, got:\n%s", out)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("\033")) {
+		t.Errorf("expected no colors when output is not a terminal, got:\n%q", out)
+	}
+}
+
+type failingCollector struct{ desc *prometheus.Desc }
+
+func (c failingCollector) Describe(ch chan<- *prometheus.Desc) { ch <- c.desc }
+func (c failingCollector) Collect(ch chan<- prometheus.Metric) {
+	ch <- prometheus.NewInvalidMetric(c.desc, errors.New("collector failed"))
+}
+
+func TestDumpWithFailingCollector(t *testing.T) {
+	c := failingCollector{prometheus.NewDesc("failing_metric", "", nil, nil)}
+	prometheus.MustRegister(c)
+	defer prometheus.Unregister(c)
+
+	var buf bytes.Buffer
+	DumpMetrics(&buf)
+	out := buf.String()
+	if !strings.Contains(out, "worker_pool_active_workers") {
+		t.Errorf("expected other metrics in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "collector failed") {
+		t.Errorf("expected error in output, got:\n%s", out)
+	}
+
+	buf.Reset()
+	DumpMetricsJSON(&buf)
+	var report jsonReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(report.Metrics) == 0 || !strings.Contains(report.Error, "collector failed") {
+		t.Errorf("expected metrics and error in JSON, got:\n%s", buf.String())
 	}
 }
