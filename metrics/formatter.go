@@ -176,7 +176,7 @@ func humanizeMetric(name string, val float64) string {
 		return time.Duration(val * float64(time.Second)).Round(time.Millisecond).String()
 	case name == "http_client_requests_total" || name == "http_client_errors_total" ||
 		name == "http_client_requests_per_second" || name == "http_client_errors_per_second" ||
-		name == "scheduler_skipped_requests_total":
+		name == "scheduler_skipped_requests_total" || name == "worker_errors_total":
 		return humanize.Comma(int64(val))
 	default:
 		return fmt.Sprintf("%v", val)

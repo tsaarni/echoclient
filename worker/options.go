@@ -37,6 +37,7 @@ var (
 
 // WorkerFunc defines the function signature for work to be performed by the pool.
 // The function receives a context for cancellation and a reference to the WorkerPool.
+// Returned errors are counted in the worker_errors_total metric.
 type WorkerFunc func(ctx context.Context, wp *WorkerPool) error
 
 // LifeCycleFunc defines a function signature for lifecycle hooks.

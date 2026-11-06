@@ -61,6 +61,13 @@ var (
 		},
 	)
 
+	WorkerErrorsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "worker_errors_total",
+			Help: "Number of errors returned by worker functions.",
+		},
+	)
+
 	SchedulerRequestLatencySeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "scheduler_request_latency_seconds",

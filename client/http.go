@@ -2,6 +2,7 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"net"
@@ -60,9 +61,8 @@ func (rt *MeasuringRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	start := time.Now()
 	resp, err := rt.next.RoundTrip(req)
 	if err != nil {
-		var opErr *net.OpError
-		if errors.As(err, &opErr) {
-			metrics.HttpClientErrorsTotal.WithLabelValues(opErr.Err.Error(), req.URL.Host).Inc()
+		if label, ok := errorLabel(err); ok {
+			metrics.HttpClientErrorsTotal.WithLabelValues(label, req.URL.Host).Inc()
 		}
 	} else {
 		duration := time.Since(start).Seconds()
@@ -70,4 +70,18 @@ func (rt *MeasuringRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		metrics.HttpClientRequestsTotal.WithLabelValues(req.Method, strconv.Itoa(resp.StatusCode), req.URL.Host).Inc()
 	}
 	return resp, err
+}
+
+// errorLabel returns the error label for http_client_errors_total.
+// It returns false for context.Canceled, since requests are canceled when the worker pool stops.
+// For net.OpError the label omits the addresses.
+func errorLabel(err error) (string, bool) {
+	if errors.Is(err, context.Canceled) {
+		return "", false
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return opErr.Err.Error(), true
+	}
+	return err.Error(), true
 }

@@ -217,6 +217,11 @@ func (wp *WorkerPool) runWorker() {
 		if errors.Is(err, ErrStopWorker) {
 			return
 		}
+
+		// Errors caused by stopping the pool are not counted.
+		if err != nil && (wp.ctx.Err() == nil || !errors.Is(err, context.Canceled)) {
+			metrics.WorkerErrorsTotal.Inc()
+		}
 	}
 }
 

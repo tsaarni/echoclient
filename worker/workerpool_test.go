@@ -2,9 +2,13 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/tsaarni/echoclient/metrics"
 )
 
 // getActiveWorkers is a test helper to safely read activeWorkers.
@@ -297,5 +301,46 @@ func TestExecuteUneasedStepInfinite(t *testing.T) {
 
 	if callCount.Load() == 0 {
 		t.Error("expected at least some calls to run in infinite step")
+	}
+}
+
+func TestWorkerErrorsCounted(t *testing.T) {
+	before := testutil.ToFloat64(metrics.WorkerErrorsTotal)
+
+	var calls atomic.Int64
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		if calls.Add(1)%2 == 0 {
+			return errors.New("failed")
+		}
+		return nil
+	}, WithConcurrency(2), WithRepetitions(10))
+	_ = wp.Launch()
+	wp.Wait()
+
+	if got := testutil.ToFloat64(metrics.WorkerErrorsTotal) - before; got != 5 {
+		t.Errorf("expected 5 errors, got %v", got)
+	}
+}
+
+func TestWorkerErrorsNotCountedOnStop(t *testing.T) {
+	before := testutil.ToFloat64(metrics.WorkerErrorsTotal)
+
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}, WithConcurrency(3))
+	_ = wp.Launch()
+	time.Sleep(50 * time.Millisecond)
+	wp.Stop()
+	wp.Wait()
+
+	wp = NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		return ErrStopWorker
+	}, WithConcurrency(3), WithRepetitions(3))
+	_ = wp.Launch()
+	wp.Wait()
+
+	if got := testutil.ToFloat64(metrics.WorkerErrorsTotal) - before; got != 0 {
+		t.Errorf("expected 0 errors, got %v", got)
 	}
 }
