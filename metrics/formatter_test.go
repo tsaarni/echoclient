@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,8 @@ func TestHumanizeMetric(t *testing.T) {
 		{"process_start_time_seconds", 1700000000, time.Unix(1700000000, 0).Format("2006-01-02 15:04:05 MST")},
 		{"go_goroutines", 1234, "1,234"},
 		{"runtime_seconds", 12.3456, "12.346s"},
+		{"http_client_request_duration_seconds_p50", 0.0000579123, "57.9µs"},
+		{"http_client_request_duration_seconds_p99", 1.23456, "1.23s"},
 		{"http_client_requests_total", 5678, "5,678"},
 		{"unknown_metric", 99.9, "99.9"},
 	}
@@ -70,13 +73,55 @@ func TestPercentileFromHistogram(t *testing.T) {
 		},
 	}
 
-	if got := percentileFromHistogram(h, 0.5); got != 2.0 {
-		t.Errorf("expected p50 to be 2.0, got %v", got)
+	// Rank 5 is in bucket (1, 2] with 6 samples after 2: 1 + 3/6.
+	if got := percentileFromHistogram(h, 0.5); got != 1.5 {
+		t.Errorf("expected p50 to be 1.5, got %v", got)
 	}
 
-	if got := percentileFromHistogram(h, 0.9); got != 3.0 {
-		t.Errorf("expected p90 to be 3.0, got %v", got)
+	// Rank 9 is in bucket (2, 3] with 2 samples after 8: 2 + 1/2.
+	if got := percentileFromHistogram(h, 0.9); got != 2.5 {
+		t.Errorf("expected p90 to be 2.5, got %v", got)
 	}
+}
+
+func TestPercentileFromNativeHistogram(t *testing.T) {
+	tests := []struct {
+		name       string
+		values     []float64
+		percentile float64
+		want       float64
+	}{
+		{"uniform-p50", seq(0.001, 1, 1000), 0.5, 0.5},
+		{"uniform-p99", seq(0.001, 1, 1000), 0.99, 0.99},
+		{"sub-ms", seq(0.00005, 0.0001, 100), 0.5, 0.000075},
+		{"two-clusters-low", append(seq(0.001, 0.0011, 50), seq(1, 1.1, 50)...), 0.25, 0.00105},
+		{"two-clusters-high", append(seq(0.001, 0.0011, 50), seq(1, 1.1, 50)...), 0.75, 1.05},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := prometheus.NewHistogram(latencyHistogramOpts("test_seconds", "test"))
+			for _, v := range tt.values {
+				h.Observe(v)
+			}
+			var m dto.Metric
+			if err := h.Write(&m); err != nil {
+				t.Fatal(err)
+			}
+			got := percentileFromHistogram(m.GetHistogram(), tt.percentile)
+			if math.Abs(got-tt.want)/tt.want > 0.05 {
+				t.Errorf("expected %v within 5%%, got %v", tt.want, got)
+			}
+		})
+	}
+}
+
+// seq returns n values evenly spaced from start to end.
+func seq(start, end float64, n int) []float64 {
+	values := make([]float64, n)
+	for i := range values {
+		values[i] = start + (end-start)*float64(i)/float64(n-1)
+	}
+	return values
 }
 
 func TestSynthetizeRateMetrics(t *testing.T) {

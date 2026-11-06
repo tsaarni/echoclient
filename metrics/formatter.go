@@ -3,6 +3,7 @@ package metrics
 import (
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -138,25 +139,76 @@ func skipMetric(name string) bool {
 	return slices.Contains(skipExact, name)
 }
 
-// percentileFromHistogram returns the upper bound value for the given percentile.
+// percentileFromHistogram estimates the given percentile from a histogram.
+// Native histogram buckets are used when present, otherwise classic buckets.
 func percentileFromHistogram(histogram *dto.Histogram, percentile float64) float64 {
 	total := histogram.GetSampleCount()
-	if total == 0 || len(histogram.Bucket) == 0 {
+	if total == 0 {
 		return 0
 	}
-
-	// How many samples should be below this percentile.
-	target := uint64(float64(total) * percentile)
-
-	// Find the first bucket where the cumulative count meets or exceeds the target.
-	for _, b := range histogram.Bucket {
-		if b.GetCumulativeCount() >= target {
-			return b.GetUpperBound()
-		}
+	buckets := classicBuckets(histogram)
+	if histogram.Schema != nil {
+		buckets = nativeBuckets(histogram)
 	}
 
-	// If not found, return the highest bucket.
-	return histogram.Bucket[len(histogram.Bucket)-1].GetUpperBound()
+	// Interpolate linearly within the bucket that holds the rank.
+	rank := float64(total) * percentile
+	cumulative, last := 0.0, 0.0
+	for _, b := range buckets {
+		if b.count > 0 && cumulative+b.count >= rank {
+			return b.lower + (b.upper-b.lower)*(rank-cumulative)/b.count
+		}
+		cumulative, last = cumulative+b.count, b.upper
+	}
+	return last
+}
+
+// bucket is a histogram bucket that holds count samples in (lower, upper].
+type bucket struct{ lower, upper, count float64 }
+
+// classicBuckets returns the classic buckets of a histogram.
+// Samples above the highest bucket are not included.
+func classicBuckets(histogram *dto.Histogram) []bucket {
+	var buckets []bucket
+	lower, prevCount := 0.0, 0.0
+	for _, b := range histogram.GetBucket() {
+		count := float64(b.GetCumulativeCount())
+		buckets = append(buckets, bucket{lower, b.GetUpperBound(), count - prevCount})
+		lower, prevCount = b.GetUpperBound(), count
+	}
+	return buckets
+}
+
+// nativeBuckets returns the positive native buckets of a histogram.
+// Samples in the zero bucket and negative buckets are put in a first bucket at 0.
+func nativeBuckets(histogram *dto.Histogram) []bucket {
+	// Native bucket i holds samples in (base^(i-1), base^i].
+	base := math.Exp2(math.Exp2(-float64(histogram.GetSchema())))
+	other := float64(histogram.GetSampleCount())
+	var buckets []bucket
+	var index int32
+	var count int64
+	deltas := histogram.GetPositiveDelta()
+	for _, span := range histogram.GetPositiveSpan() {
+		index += span.GetOffset()
+		for range span.GetLength() {
+			count += deltas[0]
+			deltas = deltas[1:]
+			buckets = append(buckets, bucket{math.Pow(base, float64(index-1)), math.Pow(base, float64(index)), float64(count)})
+			other -= float64(count)
+			index++
+		}
+	}
+	return append([]bucket{{0, 0, other}}, buckets...)
+}
+
+// roundSignificant rounds d to 3 significant digits.
+func roundSignificant(d time.Duration) time.Duration {
+	r := time.Duration(1)
+	for d >= 1000*r {
+		r *= 10
+	}
+	return d.Round(r)
 }
 
 // humanizeMetric returns a human-readable string for metrics.
@@ -169,8 +221,9 @@ func humanizeMetric(name string, val float64) string {
 	case name == "process_open_fds" || name == "go_goroutines" || name == "go_threads" || name == "worker_pool_active_workers":
 		return humanize.Comma(int64(val))
 	case strings.HasPrefix(name, "http_client_request_duration_seconds") ||
-		strings.HasPrefix(name, "scheduler_request_latency_seconds") ||
-		name == "runtime_seconds" || name == "process_cpu_seconds_total":
+		strings.HasPrefix(name, "scheduler_request_latency_seconds"):
+		return roundSignificant(time.Duration(val * float64(time.Second))).String()
+	case name == "runtime_seconds" || name == "process_cpu_seconds_total":
 		return time.Duration(val * float64(time.Second)).Round(time.Millisecond).String()
 	case name == "http_client_requests_total" || name == "http_client_errors_total" ||
 		name == "http_client_requests_per_second" || name == "http_client_errors_per_second" ||

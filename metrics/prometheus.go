@@ -11,6 +11,21 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// latencyHistogramOpts returns options for a latency histogram.
+//
+// Native buckets grow by a factor of about 1.044, so percentiles in DumpMetrics are within
+// about 4% at any latency. Classic buckets (100µs to 13s) are kept for text format scrapes.
+// When more than 320 native buckets are needed, their resolution is reduced.
+func latencyHistogramOpts(name, help string) prometheus.HistogramOpts {
+	return prometheus.HistogramOpts{
+		Name:                           name,
+		Help:                           help,
+		Buckets:                        prometheus.ExponentialBuckets(0.0001, 2, 18),
+		NativeHistogramBucketFactor:    1.05,
+		NativeHistogramMaxBucketNumber: 320,
+	}
+}
+
 var (
 	HttpClientRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -21,11 +36,7 @@ var (
 	)
 
 	HttpClientRequestDurationSeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "http_client_request_duration_seconds",
-			Help:    "Histogram of latencies for HTTP client requests.",
-			Buckets: prometheus.DefBuckets,
-		},
+		latencyHistogramOpts("http_client_request_duration_seconds", "Histogram of latencies for HTTP client requests."),
 		[]string{"method", "host"},
 	)
 
@@ -69,11 +80,7 @@ var (
 	)
 
 	SchedulerRequestLatencySeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "scheduler_request_latency_seconds",
-			Help:    "Request latency including wait time when all workers are busy due to slow server responses.",
-			Buckets: prometheus.DefBuckets,
-		},
+		latencyHistogramOpts("scheduler_request_latency_seconds", "Request latency including wait time when all workers are busy due to slow server responses."),
 		[]string{},
 	)
 
