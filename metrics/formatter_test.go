@@ -37,6 +37,10 @@ func TestHumanizeMetric(t *testing.T) {
 		{"runtime_seconds", 12.3456, "12.346s"},
 		{"http_client_request_duration_seconds_p50", 0.0000579123, "57.9µs"},
 		{"http_client_request_duration_seconds_p99", 1.23456, "1.23s"},
+		{"op_duration_seconds_p50", 0.000000195021, "195ns"},
+		{"op_wait_seconds", 0.0123456, "12.3ms"},
+		{"process_start_time_seconds", 1700000000, time.Unix(1700000000, 0).Format("2006-01-02 15:04:05 MST")},
+		{"op_seconds_total", 2.5, "2.5"},
 		{"http_client_requests_total", 5678, "5,678"},
 		{"unknown_metric", 99.9, "99.9"},
 	}

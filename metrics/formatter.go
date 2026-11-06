@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -208,6 +209,9 @@ func roundSignificant(d time.Duration) time.Duration {
 	return d.Round(r)
 }
 
+// secondsMetric matches metrics in seconds and their percentiles, e.g. "op_duration_seconds_p99".
+var secondsMetric = regexp.MustCompile(`_seconds(_p\d+)?$`)
+
 // humanizeMetric returns a human-readable string for metrics.
 func humanizeMetric(name string, val float64) string {
 	switch {
@@ -217,12 +221,10 @@ func humanizeMetric(name string, val float64) string {
 		return time.Unix(int64(val), 0).Format("2006-01-02 15:04:05 MST")
 	case name == "process_open_fds" || name == "go_goroutines" || name == "go_threads" || name == "worker_pool_active_workers":
 		return humanize.Comma(int64(val))
-	case strings.HasPrefix(name, "http_client_request_duration_seconds") ||
-		strings.HasPrefix(name, "http_client_response_headers_seconds") ||
-		strings.HasPrefix(name, "scheduler_request_latency_seconds"):
-		return roundSignificant(time.Duration(val * float64(time.Second))).String()
 	case name == "runtime_seconds" || name == "process_cpu_seconds_total":
 		return time.Duration(val * float64(time.Second)).Round(time.Millisecond).String()
+	case secondsMetric.MatchString(name):
+		return roundSignificant(time.Duration(val * float64(time.Second))).String()
 	case name == "http_client_requests_total" || name == "http_client_errors_total" ||
 		name == "http_client_requests_per_second" || name == "http_client_errors_per_second" ||
 		name == "scheduler_skipped_requests_total" || name == "worker_errors_total" ||
