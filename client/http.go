@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/tsaarni/echoclient/metrics"
@@ -57,31 +59,67 @@ func NewMeasuringRoundTripper(next http.RoundTripper) http.RoundTripper {
 }
 
 // RoundTrip is called for each HTTP request and records Prometheus metrics for it.
+// The request duration is recorded when the response body is read to the end or closed.
 func (rt *MeasuringRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
+	host := req.URL.Host
 	resp, err := rt.next.RoundTrip(req)
 	if err != nil {
-		if label, ok := errorLabel(err); ok {
-			metrics.HttpClientErrorsTotal.WithLabelValues(label, req.URL.Host).Inc()
-		}
-	} else {
-		duration := time.Since(start).Seconds()
-		metrics.HttpClientRequestDurationSeconds.WithLabelValues(req.Method, req.URL.Host).Observe(duration)
-		metrics.HttpClientRequestsTotal.WithLabelValues(req.Method, strconv.Itoa(resp.StatusCode), req.URL.Host).Inc()
+		countError(err, host)
+		return resp, err
 	}
-	return resp, err
+	metrics.HttpClientResponseHeadersSeconds.WithLabelValues(req.Method, host).Observe(time.Since(start).Seconds())
+	metrics.HttpClientRequestsTotal.WithLabelValues(req.Method, strconv.Itoa(resp.StatusCode), host).Inc()
+
+	// end records the request when it ends with err: the duration if it completed, otherwise the error.
+	end := func(err error) {
+		if err == nil || err == io.EOF {
+			metrics.HttpClientRequestDurationSeconds.WithLabelValues(req.Method, host).Observe(time.Since(start).Seconds())
+		} else {
+			countError(err, host)
+		}
+	}
+
+	// Without a body, or when the body is a connection (101 Switching Protocols), the request ends here.
+	if resp.Body == http.NoBody || resp.StatusCode == http.StatusSwitchingProtocols {
+		end(nil)
+	} else {
+		resp.Body = &measuringBody{ReadCloser: resp.Body, end: end}
+	}
+	return resp, nil
 }
 
-// errorLabel returns the error label for http_client_errors_total.
-// It returns false for context.Canceled, since requests are canceled when the worker pool stops.
-// For net.OpError the label omits the addresses.
-func errorLabel(err error) (string, bool) {
-	if errors.Is(err, context.Canceled) {
-		return "", false
+// measuringBody calls end once, when the body is read to the end, fails, or is closed.
+type measuringBody struct {
+	io.ReadCloser
+	end  func(error)
+	once sync.Once
+}
+
+func (b *measuringBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil {
+		b.once.Do(func() { b.end(err) })
 	}
+	return n, err
+}
+
+func (b *measuringBody) Close() error {
+	b.once.Do(func() { b.end(nil) })
+	return b.ReadCloser.Close()
+}
+
+// countError counts err in http_client_errors_total.
+// context.Canceled is not counted, since requests are canceled when the worker pool stops.
+// For net.OpError the label omits the addresses.
+func countError(err error, host string) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	label := err.Error()
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
-		return opErr.Err.Error(), true
+		label = opErr.Err.Error()
 	}
-	return err.Error(), true
+	metrics.HttpClientErrorsTotal.WithLabelValues(label, host).Inc()
 }

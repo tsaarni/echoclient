@@ -36,7 +36,12 @@ var (
 	)
 
 	HttpClientRequestDurationSeconds = promauto.NewHistogramVec(
-		latencyHistogramOpts("http_client_request_duration_seconds", "Histogram of latencies for HTTP client requests."),
+		latencyHistogramOpts("http_client_request_duration_seconds", "Duration of HTTP client requests, until the response body is read or closed."),
+		[]string{"method", "host"},
+	)
+
+	HttpClientResponseHeadersSeconds = promauto.NewHistogramVec(
+		latencyHistogramOpts("http_client_response_headers_seconds", "Time until HTTP client receives the response headers."),
 		[]string{"method", "host"},
 	)
 

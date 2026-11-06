@@ -218,6 +218,7 @@ func humanizeMetric(name string, val float64) string {
 	case name == "process_open_fds" || name == "go_goroutines" || name == "go_threads" || name == "worker_pool_active_workers":
 		return humanize.Comma(int64(val))
 	case strings.HasPrefix(name, "http_client_request_duration_seconds") ||
+		strings.HasPrefix(name, "http_client_response_headers_seconds") ||
 		strings.HasPrefix(name, "scheduler_request_latency_seconds"):
 		return roundSignificant(time.Duration(val * float64(time.Second))).String()
 	case name == "runtime_seconds" || name == "process_cpu_seconds_total":

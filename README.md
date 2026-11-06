@@ -169,9 +169,9 @@ go metrics.StartPrometheusServer(":9090")
 
 The collected metrics include:
 
-- **Requests**: Count, rate, and duration (by method, host, and status code).
+- **Requests**: Count, rate (by method, host, and status code), duration until the body is read or closed, and time until response headers (by method and host).
 - **Errors**: Total count and rate.
-- **Workers**: Active concurrent worker count.
+- **Workers**: Active worker count, worker function calls, and errors.
 - **System**: User/system CPU usage and RSS memory usage.
 - **Resources**: Open file descriptors, OS threads, and goroutines.
 
