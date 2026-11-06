@@ -12,9 +12,6 @@ import (
 	"github.com/tsaarni/echoclient/metrics"
 )
 
-// ErrStopWorker is returned by a WorkerFunc to signal that the worker should stop.
-var ErrStopWorker = errors.New("stop worker")
-
 // contextKeyScheduledTime is a context key for the scheduled request time.
 type contextKeyScheduledTime struct{}
 
@@ -50,6 +47,13 @@ type WorkerPool struct {
 
 	onWorkerStart WorkerStartFunc // Protected by workerMu.
 	onWorkerExit  WorkerExitFunc  // Protected by workerMu.
+
+	resultMu sync.Mutex
+	finished bool  // Stop or Abort was called. Protected by resultMu.
+	result   error // Error passed to Abort. Protected by resultMu.
+
+	pauseMu sync.Mutex
+	resume  chan struct{} // Closed when a pause ends. Nil when not paused. Protected by pauseMu.
 }
 
 // NewWorkerPool creates a new worker pool.
@@ -108,15 +112,37 @@ func (wp *WorkerPool) LaunchWithContext(ctx context.Context) error {
 }
 
 // Wait blocks until all workers and traffic profile executor has completed.
-func (wp *WorkerPool) Wait() {
+// It returns the error passed to Abort, or nil.
+func (wp *WorkerPool) Wait() error {
 	wp.wg.Wait()
+	wp.resultMu.Lock()
+	defer wp.resultMu.Unlock()
+	return wp.result
 }
 
-// Stop signals all workers to stop immediately.
+// Stop ends the run. Wait returns nil.
+// In-flight worker function calls are canceled through their context.
 func (wp *WorkerPool) Stop() {
-	if wp.cancel != nil {
-		wp.cancel()
+	wp.finish(nil)
+}
+
+// Abort ends the run because of err. Wait returns err.
+// The first call to Stop or Abort decides the result returned by Wait.
+func (wp *WorkerPool) Abort(err error) {
+	wp.finish(err)
+}
+
+func (wp *WorkerPool) finish(err error) {
+	if wp.cancel == nil {
+		return
 	}
+	wp.resultMu.Lock()
+	defer wp.resultMu.Unlock()
+	if wp.finished {
+		return
+	}
+	wp.finished, wp.result = true, err
+	wp.cancel()
 }
 
 // SetRateLimit updates the rate limiter's rate and burst at runtime.
@@ -179,14 +205,6 @@ func (wp *WorkerPool) SetWorkerHooks(onStart WorkerStartFunc, onExit WorkerExitF
 	wp.workerMu.Unlock()
 }
 
-// countError counts err in worker_errors_total.
-// Errors caused by stopping the pool are not counted.
-func (wp *WorkerPool) countError(err error) {
-	if err != nil && (wp.ctx.Err() == nil || !errors.Is(err, context.Canceled)) {
-		metrics.WorkerErrorsTotal.Inc()
-	}
-}
-
 // runWorker executes the worker loop.
 func (wp *WorkerPool) runWorker() {
 	defer wp.wg.Done()
@@ -208,7 +226,9 @@ func (wp *WorkerPool) runWorker() {
 	if onStart != nil {
 		startCtx, err := onStart(ctx, wp)
 		if err != nil {
-			wp.countError(err)
+			if wp.ctx.Err() == nil {
+				metrics.WorkerErrorsTotal.Inc()
+			}
 			return
 		}
 		if startCtx != nil {
@@ -232,6 +252,11 @@ func (wp *WorkerPool) runWorker() {
 			return
 		}
 
+		// During a pause, wait and then check again.
+		if wp.waitWhilePaused() {
+			continue
+		}
+
 		// Try to claim a repetition. If no more repetitions remain, exit.
 		if !wp.shouldContinue() {
 			return
@@ -247,18 +272,47 @@ func (wp *WorkerPool) runWorker() {
 
 		worker := wp.GetWorker()
 		err = worker(workerCtx, wp)
+		if wp.ctx.Err() != nil {
+			return // Calls interrupted by the end of the run are not counted.
+		}
+		metrics.WorkerCallsTotal.Inc()
+		if err != nil {
+			metrics.WorkerErrorsTotal.Inc()
+		}
 
 		// Record CO-corrected latency at the worker level.
 		if st := ScheduledTimeFromContext(workerCtx); !st.IsZero() {
 			metrics.SchedulerRequestLatencySeconds.WithLabelValues().Observe(time.Since(st).Seconds())
 		}
-
-		if errors.Is(err, ErrStopWorker) {
-			return
-		}
-
-		wp.countError(err)
 	}
+}
+
+// setPaused pauses or resumes all workers.
+func (wp *WorkerPool) setPaused(paused bool) {
+	wp.pauseMu.Lock()
+	defer wp.pauseMu.Unlock()
+	if paused && wp.resume == nil {
+		wp.resume = make(chan struct{})
+	} else if !paused && wp.resume != nil {
+		close(wp.resume)
+		wp.resume = nil
+	}
+}
+
+// waitWhilePaused blocks until the pause ends or the pool stops.
+// It returns true if it waited.
+func (wp *WorkerPool) waitWhilePaused() bool {
+	wp.pauseMu.Lock()
+	resume := wp.resume
+	wp.pauseMu.Unlock()
+	if resume == nil {
+		return false
+	}
+	select {
+	case <-resume:
+	case <-wp.ctx.Done():
+	}
+	return true
 }
 
 // tryScaleDown handles scaling down the worker pool when activeWorkers > targetConcurrency.
@@ -327,8 +381,10 @@ func (wp *WorkerPool) executeStep(st *Step, ticker *time.Ticker, startRate, star
 		}
 	}()
 
-	// Handle pause steps: just wait for the duration.
+	// Pause: workers stay alive but do not call the worker function.
 	if st.pause {
+		wp.setPaused(true)
+		defer wp.setPaused(false)
 		select {
 		case <-time.After(st.duration):
 		case <-wp.ctx.Done():
@@ -351,83 +407,58 @@ func (wp *WorkerPool) executeStep(st *Step, ticker *time.Ticker, startRate, star
 	// Reset per-step coordinated omission state.
 	wp.scheduler.Reset(time.Now())
 
-	if st.duration == 0 {
-		return wp.executeUneasedStep(st, ticker)
-	}
-	return wp.executeTimedStep(st, ticker, startRate, startConcurrency)
+	return wp.runStep(st, ticker, startRate, startConcurrency)
 }
 
-// executeUneasedStep runs a step with zero duration and no easing functions.
-// It applies the target configuration immediately and waits for completion (if repetitions > 0)
-// or runs indefinitely until cancellation.
-func (wp *WorkerPool) executeUneasedStep(st *Step, ticker *time.Ticker) (int, int) {
-	targetRate := st.rps
-	targetBurst := st.burst
-	targetConcurrency := st.concurrency
-
-	// Apply target configuration immediately.
-	wp.SetRateLimit(targetRate, targetBurst)
-	wp.SetConcurrency(targetConcurrency)
-
-	if st.repetitions > 0 {
-		// Infinite duration but finite repetitions.
-		for wp.remainingReps.Load() > 0 || wp.activeWorkers.Load() > 0 {
-			select {
-			case <-wp.ctx.Done():
-				return targetRate, targetConcurrency
-			case <-ticker.C:
-			}
-		}
-	} else {
-		// Infinite duration and infinite repetitions: run until cancelled.
-		<-wp.ctx.Done()
-	}
-
-	return targetRate, targetConcurrency
-}
-
-// executeTimedStep runs a step with a specific duration, applying easing if configured.
-func (wp *WorkerPool) executeTimedStep(st *Step, ticker *time.Ticker, startRate, startConcurrency int) (int, int) {
-	targetRate := st.rps
-	targetBurst := st.burst
-	targetConcurrency := st.concurrency
+// runStep applies the rate and concurrency of a step until the step ends.
+// The step ends when its duration has passed, or when its repetitions are used
+// and all workers have exited. Without duration and repetitions it runs until the pool stops.
+//
+// On every tick, eased values are updated and workers that have exited are replaced.
+// Values without easing are set once, so SetRateLimit and SetConcurrency can change them.
+func (wp *WorkerPool) runStep(st *Step, ticker *time.Ticker, startRate, startConcurrency int) (int, int) {
 	startTime := time.Now()
 
 	// Final values of the step. Easing to rps 0 ends at 1 rps.
-	finalRate := calculateEasedValue(startRate, targetRate, 1, st.rpsEasing)
-	finalConcurrency := calculateEasedValue(startConcurrency, targetConcurrency, 1, st.concurrencyEasing)
+	finalRate := calculateEasedValue(startRate, st.rps, 1, st.rpsEasing)
+	finalConcurrency := calculateEasedValue(startConcurrency, st.concurrency, 1, st.concurrencyEasing)
+
+	wp.SetRateLimit(calculateEasedValue(startRate, st.rps, 0, st.rpsEasing), st.burst)
+	wp.SetConcurrency(calculateEasedValue(startConcurrency, st.concurrency, 0, st.concurrencyEasing))
 
 	for {
-		now := time.Now()
-		elapsed := now.Sub(startTime)
-
-		// Check if repetitions satisfied and workers finished.
-		// TODO: use workgroup instead of polling?
-		if st.repetitions > 0 && wp.remainingReps.Load() <= 0 && wp.activeWorkers.Load() == 0 {
-			return finalRate, finalConcurrency
-		}
-
-		if elapsed >= st.duration {
-			// Duration ended: ensure we hit the exact target at the end.
-			wp.SetRateLimit(finalRate, targetBurst)
-			wp.SetConcurrency(finalConcurrency)
-			return finalRate, finalConcurrency
-		}
-
-		progress := float64(elapsed) / float64(st.duration)
-
-		// Calculate and apply current parameters with easing.
-		currentRPS := calculateEasedValue(startRate, targetRate, progress, st.rpsEasing)
-		currentConcurrency := calculateEasedValue(startConcurrency, targetConcurrency, progress, st.concurrencyEasing)
-
-		wp.SetRateLimit(currentRPS, targetBurst)
-		wp.SetConcurrency(currentConcurrency)
-
 		select {
 		case <-wp.ctx.Done():
-			return currentRPS, currentConcurrency
+			return finalRate, finalConcurrency
 		case <-ticker.C:
 		}
+
+		elapsed := time.Since(startTime)
+		if st.duration > 0 && elapsed >= st.duration {
+			return finalRate, finalConcurrency
+		}
+
+		// When repetitions are used, wait for workers to exit and do not replace them.
+		if st.repetitions > 0 && wp.remainingReps.Load() <= 0 {
+			if wp.activeWorkers.Load() == 0 {
+				return finalRate, finalConcurrency
+			}
+			continue
+		}
+
+		// Easing requires a duration, so progress is only used when duration > 0.
+		progress := 1.0
+		if st.duration > 0 {
+			progress = float64(elapsed) / float64(st.duration)
+		}
+		if st.rpsEasing != nil {
+			wp.SetRateLimit(calculateEasedValue(startRate, st.rps, progress, st.rpsEasing), st.burst)
+		}
+		concurrency := int(wp.targetConcurrency.Load())
+		if st.concurrencyEasing != nil {
+			concurrency = calculateEasedValue(startConcurrency, st.concurrency, progress, st.concurrencyEasing)
+		}
+		wp.SetConcurrency(concurrency)
 	}
 }
 

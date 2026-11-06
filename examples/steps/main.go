@@ -131,7 +131,9 @@ func main() {
 	if err := pool.Launch(); err != nil {
 		panic(err)
 	}
-	pool.Wait()
+	if err := pool.Wait(); err != nil {
+		panic(err)
+	}
 
 	fmt.Println("Traffic profile steps completed.")
 }

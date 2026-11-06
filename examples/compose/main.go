@@ -94,7 +94,9 @@ func main() {
 	if err := pool.Launch(); err != nil {
 		panic(err)
 	}
-	pool.Wait()
+	if err := pool.Wait(); err != nil {
+		panic(err)
+	}
 
 	close(stopTicker)
 	fmt.Println("\nLoad test completed.")

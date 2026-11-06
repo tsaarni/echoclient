@@ -92,7 +92,9 @@ func main() {
 	if err := pool.Launch(); err != nil {
 		log.Fatal(err)
 	}
-	pool.Wait()
+	if err := pool.Wait(); err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println("Final metrics:")
 	metrics.DumpMetrics(os.Stdout)

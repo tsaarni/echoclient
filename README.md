@@ -40,6 +40,31 @@ pool.Launch()
 pool.Wait()
 ```
 
+### Ending the Run
+
+The run ends when the duration or repetitions of the last step are used, or when `Stop` or `Abort` is called.
+`Abort` gives the reason, which `Wait` returns.
+
+```go
+loadFunc := func(ctx context.Context, wp *worker.WorkerPool) error {
+    resp, err := http.Get("http://localhost:8080")
+    if err != nil {
+        return err // Counted in worker_errors_total.
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode == http.StatusUnauthorized {
+        wp.Abort(errors.New("credentials rejected"))
+    }
+    return nil
+}
+
+pool := worker.NewWorkerPool(loadFunc, worker.WithConcurrency(10))
+pool.Launch()
+if err := pool.Wait(); err != nil {
+    log.Fatal(err)
+}
+```
+
 ### Multi-Step Traffic Profile
 
 Ramps up to 100 RPS over 5 seconds, holds it for 10 seconds while scaling workers from 10 to 20, and ramps down to zero over 5 seconds.

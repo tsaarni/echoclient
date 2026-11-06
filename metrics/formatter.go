@@ -33,10 +33,7 @@ type metricSnapshot struct {
 // Previous metric values for rate calculation:
 // These rate metrics are generated client-side for console display, since there is no Prometheus server to perform the calculation. Normally this would be done e.g. by Grafana.
 // map[metricName][labels]prevValue
-var prevMetricValues = map[string]map[string]float64{
-	"http_client_requests_total": {},
-	"http_client_errors_total":   {},
-}
+var prevMetricValues = map[string]map[string]float64{}
 
 var prevMetricsDumpTime time.Time = time.Now()
 
@@ -227,14 +224,15 @@ func humanizeMetric(name string, val float64) string {
 		return time.Duration(val * float64(time.Second)).Round(time.Millisecond).String()
 	case name == "http_client_requests_total" || name == "http_client_errors_total" ||
 		name == "http_client_requests_per_second" || name == "http_client_errors_per_second" ||
-		name == "scheduler_skipped_requests_total" || name == "worker_errors_total":
+		name == "scheduler_skipped_requests_total" || name == "worker_errors_total" ||
+		name == "worker_calls_total" || name == "worker_calls_per_second":
 		return humanize.Comma(int64(val))
 	default:
 		return fmt.Sprintf("%v", val)
 	}
 }
 
-// synthetizeRateMetrics computes and adds per-second rate gauge metrics for http_client_requests_total and http_client_errors_total.
+// synthetizeRateMetrics computes and adds per-second rate gauge metrics for selected counters.
 func synthetizeRateMetrics(metricFamilies *[]*dto.MetricFamily) {
 	fromMetrics := []struct {
 		fromName string
@@ -242,6 +240,7 @@ func synthetizeRateMetrics(metricFamilies *[]*dto.MetricFamily) {
 	}{
 		{"http_client_requests_total", "http_client_requests_per_second"},
 		{"http_client_errors_total", "http_client_errors_per_second"},
+		{"worker_calls_total", "worker_calls_per_second"},
 	}
 
 	now := time.Now()
@@ -284,6 +283,9 @@ func buildRateMetricFamily(fromFamily *dto.MetricFamily, fromName, rateName stri
 			Gauge: &dto.Gauge{Value: &rate},
 		}
 		rateFamily.Metric = append(rateFamily.Metric, newMetric)
+		if prevMetricValues[fromName] == nil {
+			prevMetricValues[fromName] = map[string]float64{}
+		}
 		prevMetricValues[fromName][labels] = val
 	}
 	return rateFamily

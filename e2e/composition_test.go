@@ -58,8 +58,7 @@ func TestE2ECompositionMix(t *testing.T) {
 	// 3. Run worker pool executing the composed function
 	wp := worker.NewWorkerPool(mixed, worker.WithRepetitions(1000), worker.WithConcurrency(5))
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	callsA := pathACalls.Load()
 	callsB := pathBCalls.Load()
 

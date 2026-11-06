@@ -30,8 +30,7 @@ func TestContextCancellation(t *testing.T) {
 	}()
 
 	_ = wp.LaunchWithContext(ctx)
-	wp.Wait()
-
+	_ = wp.Wait()
 	if duration := time.Since(start); duration < 200*time.Millisecond || duration > 500*time.Millisecond {
 		t.Errorf("Expected cancellation in ~300ms, took %v", duration)
 	}

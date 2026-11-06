@@ -38,8 +38,7 @@ func TestSetConcurrencyAfterWorkersTerminate(t *testing.T) {
 
 	wp := NewMultiStepWorkerPool(workerFunc, profile)
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	// Should have completed 20 calls total (10 from each step).
 	if got := callCount.Load(); got != 20 {
 		t.Errorf("expected 20 calls, got %d", got)
@@ -149,8 +148,7 @@ func TestRampDownToZeroStaysRateLimited(t *testing.T) {
 		NewStep(WithDuration(time.Second), WithRateLimit(0, 0, EasingOut)),
 	})
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	// Expected ~50 (step 1) + ~33 (step 2).
 	if got := calls.Load(); got > 200 {
 		t.Errorf("expected rate-limited calls (~83), got %d", got)
@@ -180,7 +178,7 @@ func TestSetConcurrencyNegative(t *testing.T) {
 	}
 
 	wp.Stop()
-	wp.Wait()
+	_ = wp.Wait()
 }
 
 func TestStopWithoutLaunch(t *testing.T) {
@@ -191,56 +189,6 @@ func TestStopWithoutLaunch(t *testing.T) {
 
 	// Calling Stop without Launch should succeed.
 	wp.Stop()
-}
-
-func TestWorkerStop(t *testing.T) {
-	var callCount atomic.Int64
-	var activeWorkers atomic.Int64
-
-	// A worker that runs once and returns ErrStopWorker.
-	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
-		callCount.Add(1)
-		activeWorkers.Store(wp.activeWorkers.Load()) // Capture active count
-		time.Sleep(10 * time.Millisecond)
-		return ErrStopWorker
-	}
-
-	wp := NewWorkerPool(workerFunc, WithConcurrency(1), WithDuration(100*time.Millisecond))
-
-	// Launch and wait.
-	_ = wp.Launch()
-	wp.Wait()
-
-	count := callCount.Load()
-	t.Logf("Worker executed %d times", count)
-
-	if count > 1 {
-		t.Fatalf("Worker did not stop, executed %d times", count)
-	}
-}
-
-// TestWorkerStopConcurrent verifies multiple workers stopping independently.
-func TestWorkerStopConcurrent(t *testing.T) {
-	var callCount atomic.Int64
-
-	// Worker stops immediately.
-	workerFunc := func(ctx context.Context, wp *WorkerPool) error {
-		callCount.Add(1)
-		return ErrStopWorker
-	}
-
-	// 5 workers, limit to exactly 5 repetitions so no re-spawning beyond that.
-	wp := NewWorkerPool(workerFunc, WithConcurrency(5), WithRepetitions(5))
-
-	_ = wp.Launch()
-	wp.Wait()
-
-	count := callCount.Load()
-	t.Logf("Total executions: %d", count)
-
-	if count > 5 {
-		t.Errorf("Workers did not stop reliably, executed %d times", count)
-	}
 }
 
 func TestSetWorker(t *testing.T) {
@@ -258,8 +206,7 @@ func TestSetWorker(t *testing.T) {
 
 	wp := NewWorkerPool(workerA, WithConcurrency(1), WithRepetitions(2))
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	if callCountA.Load() != 1 {
 		t.Errorf("expected workerA to run 1 time, got %d", callCountA.Load())
 	}
@@ -297,8 +244,7 @@ func TestExecuteUneasedStepInfinite(t *testing.T) {
 	_ = wp.Launch()
 	time.Sleep(50 * time.Millisecond)
 	wp.Stop()
-	wp.Wait()
-
+	_ = wp.Wait()
 	if callCount.Load() == 0 {
 		t.Error("expected at least some calls to run in infinite step")
 	}
@@ -315,8 +261,7 @@ func TestWorkerErrorsCounted(t *testing.T) {
 		return nil
 	}, WithConcurrency(2), WithRepetitions(10))
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	if got := testutil.ToFloat64(metrics.WorkerErrorsTotal) - before; got != 5 {
 		t.Errorf("expected 5 errors, got %v", got)
 	}
@@ -332,13 +277,7 @@ func TestWorkerErrorsNotCountedOnStop(t *testing.T) {
 	_ = wp.Launch()
 	time.Sleep(50 * time.Millisecond)
 	wp.Stop()
-	wp.Wait()
-
-	wp = NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
-		return ErrStopWorker
-	}, WithConcurrency(3), WithRepetitions(3))
-	_ = wp.Launch()
-	wp.Wait()
+	_ = wp.Wait()
 
 	if got := testutil.ToFloat64(metrics.WorkerErrorsTotal) - before; got != 0 {
 		t.Errorf("expected 0 errors, got %v", got)
@@ -370,8 +309,7 @@ func TestWorkerHooks(t *testing.T) {
 	_ = wp.Launch()
 	time.Sleep(50 * time.Millisecond)
 	wp.Stop()
-	wp.Wait()
-
+	_ = wp.Wait()
 	if starts.Load() != 3 || exits.Load() != 3 {
 		t.Errorf("expected 3 starts and 3 exits, got %d and %d", starts.Load(), exits.Load())
 	}
@@ -403,8 +341,7 @@ func TestWorkerHooksScaleDown(t *testing.T) {
 	if got := exits.Load(); got != 4 {
 		t.Errorf("expected 4 exits after scale down, got %d", got)
 	}
-	wp.Wait()
-
+	_ = wp.Wait()
 	if starts.Load() != 5 || exits.Load() != 5 {
 		t.Errorf("expected 5 starts and 5 exits, got %d and %d", starts.Load(), exits.Load())
 	}
@@ -427,12 +364,162 @@ func TestWorkerHooksStartError(t *testing.T) {
 		},
 	)
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	if calls.Load() != 0 || exits.Load() != 0 {
 		t.Errorf("expected no calls and no exits, got %d and %d", calls.Load(), exits.Load())
 	}
 	if got := testutil.ToFloat64(metrics.WorkerErrorsTotal) - before; got < 2 {
 		t.Errorf("expected at least 2 errors, got %v", got)
+	}
+}
+
+func TestAbort(t *testing.T) {
+	reason := errors.New("upstream broken")
+	var canceled atomic.Bool
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		select {
+		case <-ctx.Done():
+			canceled.Store(true)
+		case <-time.After(5 * time.Second):
+		}
+		return nil
+	}, WithConcurrency(2))
+	_ = wp.Launch()
+	time.Sleep(20 * time.Millisecond)
+	wp.Abort(reason)
+	wp.Abort(errors.New("second"))
+	wp.Stop()
+
+	if err := wp.Wait(); !errors.Is(err, reason) {
+		t.Errorf("expected %v, got %v", reason, err)
+	}
+	if !canceled.Load() {
+		t.Error("expected in-flight calls to be canceled")
+	}
+}
+
+func TestStopBeforeAbort(t *testing.T) {
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		wp.Stop()
+		wp.Abort(errors.New("ignored"))
+		return nil
+	}, WithConcurrency(1))
+	_ = wp.Launch()
+	if err := wp.Wait(); err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+}
+
+func TestWorkerCallsCounted(t *testing.T) {
+	before := testutil.ToFloat64(metrics.WorkerCallsTotal)
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		return nil
+	}, WithConcurrency(3), WithRepetitions(30))
+	_ = wp.Launch()
+	_ = wp.Wait()
+	if got := testutil.ToFloat64(metrics.WorkerCallsTotal) - before; got != 30 {
+		t.Errorf("expected 30 calls, got %v", got)
+	}
+}
+
+func TestStepWithoutDurationReplacesExitedWorkers(t *testing.T) {
+	// The start hook fails for the first 3 workers. A step without duration
+	// must replace them and still complete its repetitions.
+	var starts, calls atomic.Int64
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		calls.Add(1)
+		return nil
+	}, WithConcurrency(2), WithRepetitions(10))
+	wp.SetWorkerHooks(func(ctx context.Context, wp *WorkerPool) (context.Context, error) {
+		if starts.Add(1) <= 3 {
+			return ctx, errors.New("connect failed")
+		}
+		return ctx, nil
+	}, nil)
+	_ = wp.Launch()
+
+	done := make(chan struct{})
+	go func() { _ = wp.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		wp.Stop()
+		<-done
+		t.Fatal("pool did not finish")
+	}
+	if calls.Load() != 10 {
+		t.Errorf("expected 10 calls, got %d", calls.Load())
+	}
+}
+
+func TestNoWorkersStartedAfterRepetitions(t *testing.T) {
+	var starts atomic.Int64
+	wp := NewMultiStepWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		return nil
+	}, []*Step{
+		NewStep(WithConcurrency(2), WithRepetitions(4), WithDuration(500*time.Millisecond)),
+	})
+	wp.SetWorkerHooks(func(ctx context.Context, wp *WorkerPool) (context.Context, error) {
+		starts.Add(1)
+		return ctx, nil
+	}, nil)
+	_ = wp.Launch()
+	_ = wp.Wait()
+	if starts.Load() != 2 {
+		t.Errorf("expected 2 worker starts, got %d", starts.Load())
+	}
+}
+
+func TestPauseKeepsWorkersIdle(t *testing.T) {
+	var calls, starts, exits atomic.Int64
+	wp := NewMultiStepWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		calls.Add(1)
+		return nil
+	}, []*Step{
+		NewStep(WithConcurrency(2), WithRateLimit(100, 100), WithDuration(300*time.Millisecond)),
+		NewStep(WithPause(500 * time.Millisecond)),
+		NewStep(WithConcurrency(2), WithRateLimit(100, 100), WithDuration(300*time.Millisecond)),
+	})
+	wp.SetWorkerHooks(
+		func(ctx context.Context, wp *WorkerPool) (context.Context, error) {
+			starts.Add(1)
+			return ctx, nil
+		},
+		func(ctx context.Context, wp *WorkerPool) { exits.Add(1) },
+	)
+	_ = wp.Launch()
+
+	time.Sleep(500 * time.Millisecond) // Pause starts within 100ms after 300ms.
+	before := calls.Load()
+	time.Sleep(200 * time.Millisecond)
+	if got := calls.Load() - before; got != 0 {
+		t.Errorf("expected no calls during pause, got %d", got)
+	}
+	if exits.Load() != 0 {
+		t.Errorf("expected workers to stay alive during pause, got %d exits", exits.Load())
+	}
+
+	_ = wp.Wait()
+	if calls.Load() <= before {
+		t.Error("expected calls after pause")
+	}
+	if starts.Load() != 2 {
+		t.Errorf("expected 2 worker starts, got %d", starts.Load())
+	}
+}
+
+func TestSetConcurrencyInTimedStep(t *testing.T) {
+	wp := NewWorkerPool(func(ctx context.Context, wp *WorkerPool) error {
+		time.Sleep(time.Millisecond)
+		return nil
+	}, WithConcurrency(1), WithDuration(time.Second))
+	_ = wp.Launch()
+	defer func() { wp.Stop(); _ = wp.Wait() }()
+
+	time.Sleep(50 * time.Millisecond)
+	wp.SetConcurrency(4)
+	time.Sleep(300 * time.Millisecond)
+	if got := wp.getActiveWorkers(); got != 4 {
+		t.Errorf("expected 4 workers, got %d", got)
 	}
 }

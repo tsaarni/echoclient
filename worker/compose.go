@@ -3,10 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand/v2"
-	"os"
-	"sync"
 )
 
 // Weighted groups a function with its relative selection weight.
@@ -23,18 +20,11 @@ func (f WorkerFunc) Weighted(weight int) Weighted {
 	}
 }
 
-// configErrorFunc returns a WorkerFunc that logs the configuration error once,
-// stops the WorkerPool, and returns ErrStopWorker to prevent further iterations.
+// configErrorFunc returns a WorkerFunc that aborts the WorkerPool with err.
 func configErrorFunc(err error) WorkerFunc {
-	var logOnce sync.Once
 	return func(ctx context.Context, wp *WorkerPool) error {
-		logOnce.Do(func() {
-			fmt.Fprintf(os.Stderr, "Worker configuration error: %v\n", err)
-			if wp != nil {
-				wp.Stop()
-			}
-		})
-		return ErrStopWorker
+		wp.Abort(err)
+		return nil
 	}
 }
 

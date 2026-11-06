@@ -72,6 +72,13 @@ var (
 		},
 	)
 
+	WorkerCallsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "worker_calls_total",
+			Help: "Number of worker function calls.",
+		},
+	)
+
 	WorkerErrorsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "worker_errors_total",

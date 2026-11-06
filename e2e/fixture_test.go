@@ -80,7 +80,7 @@ func RunPool(h *E2ETestFixture, opts ...worker.Option) {
 		opts...,
 	)
 	_ = wp.Launch()
-	wp.Wait()
+	_ = wp.Wait()
 }
 
 // RunMultiStepPool runs a worker pool on the fixture h that follows the given sequence of steps.
@@ -93,7 +93,7 @@ func RunMultiStepPool(h *E2ETestFixture, steps []*worker.Step) {
 		steps,
 	)
 	_ = wp.Launch()
-	wp.Wait()
+	_ = wp.Wait()
 }
 
 // AssertRequests verifies that the client recorded the expected number of requests for the given status code.

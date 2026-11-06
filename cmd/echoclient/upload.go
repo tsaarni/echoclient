@@ -15,7 +15,7 @@ import (
 	"github.com/tsaarni/echoclient/worker"
 )
 
-func runUpload(args []string) {
+func runUpload(args []string) error {
 	cmd := flag.NewFlagSet("upload", flag.ExitOnError)
 	url := cmd.String("url", "http://localhost:8080/upload", "Server URL")
 	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
@@ -26,7 +26,7 @@ func runUpload(args []string) {
 
 	if err := cmd.Parse(args); err != nil {
 		fmt.Printf("Failed to parse flags: %v\n", err)
-		return
+		return nil
 	}
 
 	if *concurrency <= 0 {
@@ -36,13 +36,11 @@ func runUpload(args []string) {
 
 	parsedTotalSize, err := humanize.ParseBytes(*totalSize)
 	if err != nil {
-		fmt.Printf("Invalid totalsize: %v\n", err)
-		return
+		return fmt.Errorf("invalid size: %w", err)
 	}
 	parsedChunkSize, err := humanize.ParseBytes(*chunkSize)
 	if err != nil {
-		fmt.Printf("Invalid chunksize: %v\n", err)
-		return
+		return fmt.Errorf("invalid chunk size: %w", err)
 	}
 
 	reps := "infinite"
@@ -104,5 +102,5 @@ func runUpload(args []string) {
 		fmt.Printf("Failed to launch worker pool: %v\n", err)
 		os.Exit(1)
 	}
-	w.Wait()
+	return w.Wait()
 }

@@ -40,16 +40,21 @@ func runSubcommand(subcommand string, subArgs []string) {
 		}
 	})
 
+	var err error
 	switch subcommand {
 	case "get":
-		runGet(subArgs)
+		err = runGet(subArgs)
 	case "upload":
-		runUpload(subArgs)
+		err = runUpload(subArgs)
 	}
 	ticker.Stop()
 	cancel()
 	wg.Wait()
 	metrics.DumpMetrics(os.Stdout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func main() {

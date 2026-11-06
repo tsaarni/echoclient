@@ -108,8 +108,7 @@ func TestNoNegativeLatencyInBurst(t *testing.T) {
 
 	wp := worker.NewMultiStepWorkerPool(workerFunc, steps)
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	mu.Lock()
 	l := len(negativeLatencies)
 	mu.Unlock()
@@ -147,7 +146,7 @@ func TestUnresponsiveRateChange(t *testing.T) {
 	// Increase rate to 1000 RPS. It should finish almost immediately (~10ms total).
 	wp.SetRateLimit(1000, 10)
 
-	wp.Wait()
+	_ = wp.Wait()
 	duration := time.Since(start)
 
 	// If it takes > 5 seconds, it means they are still crawling at 1 RPS.
@@ -200,8 +199,7 @@ func TestScheduledTimeNeverExceedsNow(t *testing.T) {
 
 	wp := worker.NewMultiStepWorkerPool(workerFunc, steps)
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	mu.Lock()
 	defer mu.Unlock()
 	if len(violations) > 0 {
@@ -241,8 +239,7 @@ func TestEasingCurveAccuracy(t *testing.T) {
 
 	wp := worker.NewMultiStepWorkerPool(workerFunc, steps)
 	_ = wp.Launch()
-	wp.Wait()
-
+	_ = wp.Wait()
 	mu.Lock()
 	defer mu.Unlock()
 

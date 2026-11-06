@@ -14,7 +14,7 @@ import (
 	"github.com/tsaarni/echoclient/worker"
 )
 
-func runGet(args []string) {
+func runGet(args []string) error {
 	cmd := flag.NewFlagSet("get", flag.ExitOnError)
 	url := cmd.String("url", "http://localhost:8080", "Server URL")
 	concurrency := cmd.Int("concurrency", 1, "Number of concurrent workers")
@@ -25,7 +25,7 @@ func runGet(args []string) {
 
 	if err := cmd.Parse(args); err != nil {
 		fmt.Printf("Failed to parse flags: %v\n", err)
-		return
+		return nil
 	}
 
 	if *concurrency <= 0 {
@@ -97,5 +97,5 @@ func runGet(args []string) {
 		fmt.Printf("Failed to launch worker pool: %v\n", err)
 		os.Exit(1)
 	}
-	w.Wait()
+	return w.Wait()
 }

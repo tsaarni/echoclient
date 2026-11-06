@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 	"testing"
 )
@@ -70,10 +69,10 @@ func TestMixEdgeCases(t *testing.T) {
 
 func TestCompositionValidation(t *testing.T) {
 	t.Run("MixNilFunc", func(t *testing.T) {
-		mixed := Mix(Weighted{Weight: 10, Func: nil})
-		err := mixed(context.Background(), nil)
-		if !errors.Is(err, ErrStopWorker) {
-			t.Errorf("expected ErrStopWorker, got %v", err)
+		wp := NewWorkerPool(Mix(Weighted{Weight: 10, Func: nil}), WithConcurrency(2))
+		_ = wp.Launch()
+		if err := wp.Wait(); err == nil {
+			t.Error("expected Wait to return the configuration error")
 		}
 	})
 }

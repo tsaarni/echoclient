@@ -37,7 +37,9 @@ var (
 
 // WorkerFunc defines the function signature for work to be performed by the pool.
 // The function receives a context for cancellation and a reference to the WorkerPool.
-// Returned errors are counted in the worker_errors_total metric.
+// Calls are counted in worker_calls_total and returned errors in worker_errors_total.
+// Calls interrupted by the end of the run are not counted.
+// To end the run, call wp.Stop or wp.Abort.
 type WorkerFunc func(ctx context.Context, wp *WorkerPool) error
 
 // StepHookFunc is called when a step starts or ends.
@@ -45,7 +47,8 @@ type StepHookFunc func(ctx context.Context, wp *WorkerPool)
 
 // WorkerStartFunc is called when a worker starts.
 // The returned context is passed to every call of the worker function by this worker.
-// It must be derived from ctx. If an error is returned, the worker exits.
+// It must be derived from ctx. If an error is returned, the worker exits and is replaced
+// on the next tick (every 100ms). Call wp.Abort to end the run instead.
 type WorkerStartFunc func(ctx context.Context, wp *WorkerPool) (context.Context, error)
 
 // WorkerExitFunc is called when a worker exits, if WorkerStartFunc succeeded.
@@ -124,10 +127,8 @@ func WithRepetitions(n int) Option {
 	}
 }
 
-// WithPause creates a pause step that waits for the specified duration without spawning workers.
-//
-// This is useful for adding delays between load test phases.
-// The pause is context-aware and will be interrupted if the context is cancelled.
+// WithPause creates a pause step. Workers stay alive but do not call the worker function
+// until the pause ends. The next step continues from the rate and concurrency before the pause.
 func WithPause(d time.Duration) Option {
 	return func(c *Step) {
 		c.duration = d
